@@ -119,15 +119,22 @@ modalEl.addEventListener("click", (event) => {
 });
 
 async function openConversation(logId) {
-  modalEl.hidden = false;
-  conversationBodyEl.innerHTML = "<p class=\"insights__panel-desc\">Loading&hellip;</p>";
+  if (!modalEl || !conversationBodyEl) {
+    console.error("Conversation modal elements not found in the DOM -- the deployed insights.html may be out of date.");
+    return;
+  }
   try {
+    modalEl.hidden = false;
+    conversationBodyEl.innerHTML = "<p class=\"insights__panel-desc\">Loading&hellip;</p>";
+    if (!logId) throw new Error("Missing log id");
+
     const res = await fetch(`/api/insights/log?id=${encodeURIComponent(logId)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     renderConversation(data);
   } catch (err) {
-    conversationBodyEl.innerHTML = `<p class="insights__panel-desc">Couldn't load this conversation: ${escapeHtml(err.message)}</p>`;
+    console.error("openConversation failed:", err);
+    conversationBodyEl.innerHTML = `<p class="insights__panel-desc">Couldn't load this conversation: ${escapeHtml(err.message ?? String(err))}</p>`;
   }
 }
 
