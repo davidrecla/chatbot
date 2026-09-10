@@ -168,9 +168,16 @@ async function claudeReplyStream(
       ...openingQuestionCacheOptions(history),
     });
   } catch (err) {
-    const message = err instanceof ClaudeApiError ? err.message : "Something went wrong reaching Claude.";
     console.error(err);
-    return { stream: staticTextStream(`Sorry, I ran into a problem: ${message}`, "error"), logId: null };
+    // Never leak raw provider/Gateway error text to the customer (internal
+    // details, sometimes literal JSON). Guardrails/DLP blocking a prompt
+    // (HTTP 424) gets a warm, on-brand decline; anything else gets a
+    // generic "try again" -- both stay in character, no tech-support tone.
+    const blocked = err instanceof ClaudeApiError && err.status === 424;
+    const message = blocked
+      ? "I can't help with that one. Happy to talk coffee, pricing, or brewing though, what can I get you?"
+      : "Sorry, I'm having trouble getting a response right now. Please try again in a moment.";
+    return { stream: staticTextStream(message), logId: null };
   }
 
   let full = "";
@@ -209,14 +216,11 @@ function prependBytes(source: ReadableStream<Uint8Array>, prefix: Uint8Array): R
   });
 }
 
-function staticTextStream(text: string, tag: "text" | "error" = "text"): ReadableStream<string> {
+function staticTextStream(text: string): ReadableStream<string> {
   return new ReadableStream<string>({
     start(controller) {
-      if (tag === "error") controller.error(new Error(text));
-      else {
-        controller.enqueue(text);
-        controller.close();
-      }
+      controller.enqueue(text);
+      controller.close();
     },
   });
 }
