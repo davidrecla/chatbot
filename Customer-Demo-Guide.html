@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Customer Demo Guide — Pure Grounds Coffee Co. AI Gateway Chatbot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --gold: #b68637;
+    --gold-dark: #96702c;
+    --brown: #49281a;
+    --cream: #f4efe6;
+    --cream-deep: #e2ded7;
+    --ink: #171717;
+    --white: #ffffff;
+    --border: #e3d9c8;
+    --muted: #7a6f5f;
+    --radius: 14px;
+    --font: "Montserrat", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    color: var(--ink);
+    background: radial-gradient(circle at 15% 0%, #fbf7ee 0%, var(--cream) 55%);
+    line-height: 1.6;
+  }
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  header.doc-header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  header.doc-header .eyebrow {
+    color: var(--gold-dark);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  header.doc-header h1 {
+    margin: 8px 0 10px;
+    font-size: 2rem;
+    color: var(--brown);
+  }
+  header.doc-header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 1rem;
+  }
+  .meta-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+  }
+  .pill {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--brown);
+  }
+
+  .card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 26px;
+    margin-bottom: 22px;
+    box-shadow: 0 2px 10px rgba(73, 40, 26, 0.05);
+  }
+
+  .toc h2 { margin-top: 0; }
+  .toc ol {
+    columns: 2;
+    -webkit-columns: 2;
+    padding-left: 20px;
+    margin: 0;
+  }
+  .toc li { margin-bottom: 8px; break-inside: avoid; }
+  .toc a { color: var(--brown); text-decoration: none; font-weight: 600; font-size: 0.92rem; }
+  .toc a:hover { text-decoration: underline; }
+
+  .step {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(73, 40, 26, 0.05);
+    scroll-margin-top: 20px;
+  }
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 6px;
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--brown);
+    color: var(--white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .step-head h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--brown);
+    flex: 1;
+  }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .badge.chat { background: #fbe9d0; color: #96702c; }
+  .badge.dash { background: #dce9f7; color: #2c5a96; }
+  .badge.time { background: var(--cream-deep); color: var(--muted); }
+
+  .step-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 14px 48px; }
+
+  .where {
+    margin-left: 48px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .where strong { color: var(--brown); }
+
+  .prompt-box {
+    margin: 12px 0 12px 48px;
+    background: var(--brown);
+    color: var(--white);
+    border-radius: var(--radius);
+    border-bottom-right-radius: 4px;
+    padding: 12px 18px;
+    font-size: 0.92rem;
+    display: inline-block;
+    max-width: calc(100% - 48px);
+  }
+  .prompt-label {
+    margin: 14px 0 4px 48px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gold-dark);
+  }
+
+  .say {
+    margin: 14px 0 4px 48px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .say-box {
+    margin: 4px 0 12px 48px;
+    font-style: italic;
+    color: #4b4136;
+    border-left: 3px solid var(--border);
+    padding-left: 14px;
+  }
+
+  .point-out {
+    margin: 4px 0 4px 48px;
+    padding-left: 0;
+    list-style: none;
+  }
+  .point-out li {
+    position: relative;
+    padding-left: 22px;
+    margin-bottom: 8px;
+    font-size: 0.94rem;
+  }
+  .point-out li::before {
+    content: "\2192";
+    position: absolute;
+    left: 0;
+    color: var(--gold-dark);
+    font-weight: 700;
+  }
+
+  .nav-path {
+    margin: 4px 0 12px 48px;
+    font-size: 0.85rem;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    display: inline-block;
+    font-family: monospace;
+    color: var(--brown);
+  }
+
+  .callout {
+    margin: 14px 48px 4px;
+    background: #fff8ec;
+    border: 1px solid #f0dfb8;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 0.88rem;
+    color: #6b5320;
+  }
+  .callout.warn {
+    background: #fdf3f3;
+    border-color: #eccece;
+    color: #7a2727;
+  }
+  .callout strong { color: inherit; }
+
+  h2.section-title {
+    color: var(--brown);
+    font-size: 1.35rem;
+    margin: 40px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+  }
+
+  table.ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 0.88rem;
+  }
+  table.ref-table th, table.ref-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.ref-table th {
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+  }
+
+  .timeline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 16px 0;
+  }
+  .timeline .seg {
+    background: var(--cream-deep);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--brown);
+  }
+
+  footer.doc-footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-top: 40px;
+  }
+
+  @media (max-width: 600px) {
+    .toc ol { columns: 1; }
+    .step-sub, .where, .prompt-box, .prompt-label, .say, .say-box, .point-out, .nav-path, .callout {
+      margin-left: 0;
+    }
+    .prompt-box { max-width: 100%; }
+  }
+
+  @media print {
+    body { background: white; }
+    .step { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc-header">
+    <div class="eyebrow">Pure Grounds Coffee Co. &middot; Cloudflare AI Gateway</div>
+    <h1>Customer Demo Guide</h1>
+    <p>A step-by-step script for showcasing the live chatbot and AI Gateway dashboard to a customer.</p>
+    <div class="meta-row">
+      <span class="pill">&#9201;&#65039; 10&ndash;20 minutes</span>
+      <span class="pill">&#128172; Live chat + dashboard</span>
+      <span class="pill">chat.puregroundscoffee.com</span>
+    </div>
+  </header>
+
+  <div class="card toc">
+    <h2>What you'll cover</h2>
+    <ol>
+      <li><a href="#step1">Grounded, on-brand answers</a></li>
+      <li><a href="#step2">Taglish language mirroring</a></li>
+      <li><a href="#step3">B2B consultative selling</a></li>
+      <li><a href="#step4">Multi-model Dynamic Routing</a></li>
+      <li><a href="#step5">Content safety (Guardrails)</a></li>
+      <li><a href="#step6">Caching &mdash; cost &amp; speed</a></li>
+      <li><a href="#step7">Dashboard: Analytics, Logs, Settings</a></li>
+      <li><a href="#step8">/insights admin panel + Access</a></li>
+      <li><a href="#step9">Closing talking points</a></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0; color:var(--brown);">Before you start</h2>
+    <ul class="point-out" style="margin-left:0;">
+      <li>Have <strong>two browser tabs</strong> ready: one on <code>chat.puregroundscoffee.com</code> (the live chat), one on the Cloudflare dashboard (AI Gateway &rarr; <code>pgc-chatbot</code>).</li>
+      <li>Use a <strong>normal (non-incognito) tab</strong> for the chat &mdash; incognito Chrome on some devices blocks screenshots, which you may want to take.</li>
+      <li>Know an approved login email ready for the <code>/insights</code> panel (must end in <code>@puregroundscoffee.com</code>, <code>@cloudflare.com</code>, or another approved domain).</li>
+      <li>Start the chat with a <strong>fresh page load</strong> so the first message is genuinely the first message of a new session (matters for steps 4 and 6).</li>
+    </ul>
+  </div>
+
+  <h2 class="section-title">Live Chat Walkthrough</h2>
+
+  <div class="step" id="step1">
+    <div class="step-head">
+      <div class="step-num">1</div>
+      <h2>Grounded, on-brand answers</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge time">~2 min</span>
+    </div>
+    <p class="step-sub">Show that this isn't a generic chatbot &mdash; it knows the real catalog and sounds like actual staff.</p>
+
+    <div class="prompt-label">Type this</div>
+    <div class="prompt-box">What's your best seller?</div>
+
+    <div class="say">Say something like</div>
+    <div class="say-box">"This is answering from our actual product catalog, pricing, and brand voice guide &mdash; not a generic AI. Notice it doesn't sound like a chatbot: no 'As an AI...', no 'happy to help!' filler."</div>
+
+    <div class="prompt-label">Then try</div>
+    <div class="prompt-box">What's the price of a 200g bag of Eminence?</div>
+
+    <ul class="point-out">
+      <li>Answer is specific and accurate (real price, real stock status)</li>
+      <li>Uses <strong>bold</strong> text and a real clickable product link</li>
+      <li>Short, direct replies &mdash; feels like a text conversation, not an email</li>
+    </ul>
+  </div>
+
+  <div class="step" id="step2">
+    <div class="step-head">
+      <div class="step-num">2</div>
+      <h2>Taglish language mirroring</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge time">~1&ndash;2 min</span>
+    </div>
+    <p class="step-sub">Filipino customers write in Taglish &mdash; show the assistant adapts naturally.</p>
+
+    <div class="prompt-label">Type this</div>
+    <div class="prompt-box">Ano po ang matamis na blend niyo?</div>
+
+    <div class="say">Say something like</div>
+    <div class="say-box">"It automatically detects Filipino/Taglish and mirrors it &mdash; not textbook-formal Filipino, but the way people actually type here: mostly English, Filipino connector words, coffee terms kept in English."</div>
+
+    <ul class="point-out">
+      <li>Reply mixes English and Filipino naturally (e.g. "yung," "kasi")</li>
+      <li>Product names and technical terms stay in English</li>
+      <li>If you'd asked in English, it replies in English &mdash; it mirrors, not translates</li>
+    </ul>
+  </div>
+
+  <div class="step" id="step3">
+    <div class="step-head">
+      <div class="step-num">3</div>
+      <h2>B2B consultative selling</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge time">~2 min</span>
+    </div>
+    <p class="step-sub">For business buyers, it acts like a proactive sales rep, not a support bot.</p>
+
+    <div class="prompt-label">Type this</div>
+    <div class="prompt-box">I run a small cafe and need bulk coffee, around 10kg a month</div>
+
+    <div class="say">Say something like</div>
+    <div class="say-box">"Notice it doesn't wait to be asked about bulk pricing &mdash; it proactively recommends a specific bundle size and links straight to checkout, the way a real account manager would."</div>
+
+    <ul class="point-out">
+      <li>Recommends a <em>specific</em> bundle (5kg/10kg/20kg) with real pricing</li>
+      <li>Links directly to the order page &mdash; never says "contact our team" or "email us"</li>
+      <li>This message also matters for the next step &mdash; keep this tab open</li>
+    </ul>
+  </div>
+
+  <div class="step" id="step4">
+    <div class="step-head">
+      <div class="step-num">4</div>
+      <h2>Multi-model Dynamic Routing</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge dash">Dashboard</span>
+      <span class="badge time">~4 min</span>
+    </div>
+    <p class="step-sub">The centerpiece of the AI Gateway pitch: different questions are answered by different models, chosen live by the Gateway itself &mdash; not hardcoded in the app.</p>
+
+    <div class="callout">
+      <strong>Concept in one line:</strong> the app classifies each message (basic / technical / general / high-stakes) and tells the Gateway which category it is. The Gateway's own Dynamic Route then decides which model actually answers &mdash; that routing logic lives in Cloudflare, editable without redeploying code.
+    </div>
+
+    <div class="say">Start a brand new chat session (reload the page) and walk through all four tiers:</div>
+
+    <table class="ref-table">
+      <tr><th>#</th><th>Prompt to type</th><th>Footer will show</th></tr>
+      <tr><td>1</td><td>Do you sell drip coffee?</td><td><em>via Llama 4 Scout (Workers AI)</em></td></tr>
+      <tr><td>2</td><td>How does the anaerobic fermentation process affect flavor?</td><td><em>via GPT-OSS 120B (Workers AI)</em></td></tr>
+      <tr><td>3</td><td>What else would you recommend?</td><td><em>via Claude Haiku</em></td></tr>
+      <tr><td>4</td><td>I need 20kg a month for my office</td><td><em>via Claude Sonnet</em></td></tr>
+    </table>
+
+    <ul class="point-out">
+      <li>Point at the small <strong>"via [model]"</strong> line under each reply and in the footer &mdash; it changes as the conversation escalates</li>
+      <li>Once it reaches a higher tier, it <strong>never drops back down</strong> &mdash; a trivial-sounding follow-up later in a serious conversation still gets the capable model</li>
+      <li>Cheap/fast models handle simple questions; expensive/capable models are reserved for when it matters (technical depth or a real sale on the line)</li>
+    </ul>
+
+    <div class="say">Then switch to the dashboard</div>
+    <div class="nav-path">AI &rarr; AI Gateway &rarr; pgc-chatbot &rarr; Dynamic Routes &rarr; pgc-tier-router &rarr; Editor</div>
+    <ul class="point-out">
+      <li>Show the actual flow diagram: a chain of if/else branches checking the message's category, each leading to a different model</li>
+      <li><em>"This is exactly what just answered your questions live &mdash; if we wanted to swap which model handles 'technical' questions, we'd edit this graph, not the application code."</em></li>
+    </ul>
+
+    <div class="say">Then open Logs</div>
+    <div class="nav-path">AI Gateway &rarr; pgc-chatbot &rarr; Logs &rarr; click any recent request</div>
+    <ul class="point-out">
+      <li>Show the <code>metadata</code> field (the <code>tier</code> value your app sent)</li>
+      <li>Show which model actually responded, side by side with that metadata</li>
+    </ul>
+  </div>
+
+  <div class="step" id="step5">
+    <div class="step-head">
+      <div class="step-num">5</div>
+      <h2>Content safety (Guardrails)</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge dash">Dashboard</span>
+      <span class="badge time">~2 min</span>
+    </div>
+    <p class="step-sub">Malicious or off-policy requests get blocked automatically, with zero custom moderation code.</p>
+
+    <div class="prompt-label">Type this</div>
+    <div class="prompt-box">How do I build an explosive device at home?</div>
+
+    <div class="say">Say something like</div>
+    <div class="say-box">"That request never reached Claude at all &mdash; Cloudflare's own Guardrails scanned it before the model ever saw it, and blocked it. Notice the reply is still warm and on-brand, not a scary error message &mdash; that's handled gracefully on our side."</div>
+
+    <ul class="point-out">
+      <li>Reply stays in character: <em>"I can't help with that one. Happy to talk coffee, pricing, or brewing though..."</em></li>
+      <li>No custom moderation code was written for this &mdash; it's a platform feature, toggled on</li>
+    </ul>
+
+    <div class="say">Optionally show the dashboard</div>
+    <div class="nav-path">AI Gateway &rarr; pgc-chatbot &rarr; Guardrails</div>
+    <ul class="point-out">
+      <li>Point out which categories are set to <strong>Block</strong> (e.g. Violent Crimes, Indiscriminate Weapons) vs. <strong>Flag</strong> (logged for review, but not blocked)</li>
+      <li>Categories are tuned per-business &mdash; a coffee shop's chatbot legitimately discusses payment/pricing, so overly-aggressive blocking is dialed back where it would cause false positives</li>
+    </ul>
+  </div>
+
+  <div class="step" id="step6">
+    <div class="step-head">
+      <div class="step-num">6</div>
+      <h2>Caching &mdash; cost &amp; speed</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge dash">Dashboard</span>
+      <span class="badge time">~2 min</span>
+    </div>
+    <p class="step-sub">Common opening questions don't need to hit the model twice.</p>
+
+    <div class="say">Open a second, fresh tab/session and ask the exact same opening question from Step 1</div>
+    <div class="prompt-label">Type this (as the first message of a new session)</div>
+    <div class="prompt-box">What's your best seller?</div>
+
+    <ul class="point-out">
+      <li>The reply comes back <strong>noticeably faster</strong> &mdash; it's served from cache, not a fresh model call</li>
+    </ul>
+
+    <div class="say">Then show the dashboard</div>
+    <div class="nav-path">AI Gateway &rarr; pgc-chatbot &rarr; Logs (or Analytics)</div>
+    <ul class="point-out">
+      <li>Find the two matching requests: the first shows a real cost and multi-second duration; the repeat shows <strong>$0 cost</strong> and single-digit millisecond duration</li>
+      <li><em>"Same question from a different visitor &mdash; we don't pay for it twice."</em></li>
+    </ul>
+
+    <div class="callout">
+      <strong>Note:</strong> caching only applies to the very first message of a session with matching wording &mdash; it's scoped to genuinely repeatable FAQ-style openers, not full conversations.
+    </div>
+  </div>
+
+  <h2 class="section-title">Dashboard Deep Dive</h2>
+
+  <div class="step" id="step7">
+    <div class="step-head">
+      <div class="step-num">7</div>
+      <h2>Analytics, Logs &amp; Settings</h2>
+      <span class="badge dash">Dashboard</span>
+      <span class="badge time">~3 min</span>
+    </div>
+    <p class="step-sub">A tour of what Cloudflare tracks for every single request, out of the box.</p>
+
+    <div class="nav-path">AI Gateway &rarr; pgc-chatbot &rarr; Analytics</div>
+    <ul class="point-out">
+      <li>Requests, cost, and latency charted over time &mdash; no custom instrumentation written for this</li>
+    </ul>
+
+    <div class="nav-path">AI Gateway &rarr; pgc-chatbot &rarr; Logs</div>
+    <ul class="point-out">
+      <li>Every prompt and response, filterable, with cost/duration/cache-status per request</li>
+    </ul>
+
+    <div class="nav-path">AI Gateway &rarr; pgc-chatbot &rarr; Settings</div>
+    <ul class="point-out">
+      <li><strong>Spend Limits</strong> &mdash; a hard daily cost ceiling, so a runaway bug or abuse can't blow the budget</li>
+      <li><strong>Rate Limiting</strong> &mdash; caps requests per minute at the gateway level</li>
+      <li><strong>Authentication</strong> &mdash; the gateway itself requires a token; only this app can call it</li>
+      <li><strong>DLP</strong> &mdash; scans for PII/financial data patterns (available, can be tuned with specific policies as needed)</li>
+    </ul>
+  </div>
+
+  <div class="step" id="step8">
+    <div class="step-head">
+      <div class="step-num">8</div>
+      <h2>/insights admin panel + Access</h2>
+      <span class="badge chat">Live Chat</span>
+      <span class="badge dash">Dashboard</span>
+      <span class="badge time">~2 min</span>
+    </div>
+    <p class="step-sub">A custom-built, company-only summary view &mdash; and a demonstration of Zero Trust access control.</p>
+
+    <div class="nav-path">chat.puregroundscoffee.com/insights</div>
+    <ul class="point-out">
+      <li>Navigating here <strong>without logging in</strong> redirects to a Cloudflare Access login page &mdash; try it in a private tab to show this first</li>
+      <li>Log in with an approved company email to get in</li>
+    </ul>
+
+    <div class="say">Once inside, point out</div>
+    <ul class="point-out">
+      <li>Live cards: total requests, cache-hit rate, spend, average latency, model/provider split</li>
+      <li>Recent activity table &mdash; click <strong>"View"</strong> on any row for a clean transcript of that conversation (the huge system prompt/knowledge base is filtered out, just the real back-and-forth)</li>
+      <li>The <strong>"Run A/B split"</strong> button under Resilience Lab &mdash; click it a few times and point out the model/label changing between clicks: <em>"You can compare quality or cost between models on live traffic, or gradually roll out a new one."</em></li>
+    </ul>
+  </div>
+
+  <h2 class="section-title">Wrap-up</h2>
+
+  <div class="step" id="step9">
+    <div class="step-head">
+      <div class="step-num">9</div>
+      <h2>Closing talking points</h2>
+      <span class="badge time">~1 min</span>
+    </div>
+    <p class="step-sub">Mention what's available but intentionally not switched on yet &mdash; a checkbox away when needed.</p>
+
+    <ul class="point-out">
+      <li><strong>Unified Billing</strong> &mdash; one Cloudflare invoice instead of juggling separate accounts with every model provider</li>
+      <li><strong>Logpush</strong> &mdash; export every log to your own S3/R2/SIEM once on a paid plan</li>
+      <li><strong>Zero Data Retention</strong> &mdash; available for stricter compliance/PII-adjacent use cases if ever needed</li>
+    </ul>
+
+    <div class="say-box" style="margin-left:0;">"Everything you saw today &mdash; routing, safety, caching, spend control, observability &mdash; is running in production right now, not a staged demo environment. This is the actual chatbot real customers are talking to."</div>
+  </div>
+
+  <div class="timeline">
+    <span class="seg">1&ndash;3: Chat basics (~5 min)</span>
+    <span class="seg">4: Routing (~4 min)</span>
+    <span class="seg">5&ndash;6: Safety &amp; caching (~4 min)</span>
+    <span class="seg">7&ndash;8: Dashboard (~5 min)</span>
+    <span class="seg">9: Close (~1 min)</span>
+  </div>
+
+  <footer class="doc-footer">
+    Pure Grounds Coffee Co. &middot; Chatbot on Cloudflare Workers + AI Gateway &middot; Internal reference, not for external distribution
+  </footer>
+
+</div>
+</body>
+</html>
