@@ -1,7 +1,7 @@
 import { ClaudeApiError, streamModelReply, type GatewayRequestOptions } from "./claude";
 import { fetchInsightsSummary, fetchLogConversation, runAbTestOnce, runOutageDemo } from "./gateway";
 import { buildSystemPrompt } from "./knowledge";
-import { TIER_CONFIG, type Tier } from "./modelRouting";
+import { DYNAMIC_ROUTE_MODEL, TIER_CONFIG, type Tier } from "./modelRouting";
 import { ChatSession } from "./session";
 import type { ChatMessage, ChatRequestBody, Env, FeedbackRequestBody } from "./types";
 
@@ -188,7 +188,12 @@ async function claudeReplyStream(
   const tierConfig = TIER_CONFIG[tier];
   let reply: { stream: ReadableStream<string>; logId: string | null };
   try {
-    reply = await streamModelReply(env, tierConfig.model, buildSystemPrompt(), history, {
+    // The actual model selection happens inside the Gateway's Dynamic Route
+    // ("pgc-tier-router"), which branches on the `tier` value attached
+    // below -- see src/modelRouting.ts's header comment. `tierConfig.label`
+    // is only used for the UI indicator, since we already know which
+    // branch our own `tier` classification implies.
+    reply = await streamModelReply(env, DYNAMIC_ROUTE_MODEL, buildSystemPrompt(), history, {
       metadata: { session_id: sessionId, surface: "public-chat", tier },
       ...openingQuestionCacheOptions(history),
     });

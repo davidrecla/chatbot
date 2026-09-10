@@ -3,6 +3,19 @@
  * different model, escalate-only per session (never downgrades mid-
  * conversation -- see src/session.ts, which stores and escalates the tier).
  *
+ * Classification (which tier a message belongs to) happens here, in Worker
+ * code, because AI Gateway's Dynamic Routing can't read free-text prompt
+ * content -- its `conditional` node only branches on structured fields
+ * (`metadata.*`). But the actual model **selection** is delegated to a
+ * Dynamic Route ("pgc-tier-router", a chain of `conditional` nodes keyed on
+ * `metadata.tier`) rather than resolved directly in this file -- see
+ * DYNAMIC_ROUTE_MODEL below and how src/index.ts attaches `tier` via
+ * `cf-aig-metadata`. This genuinely exercises the Gateway's routing
+ * capability instead of just picking a model in our own code. Verified all
+ * 4 branches resolve correctly in both streaming and non-streaming mode.
+ * (Dynamic Routing's `percentage` node was unreliable in this account --
+ * see Build-Plan-Chatbot.md item 22 -- but `conditional` chains hold up.)
+ *
  * Order: trivial -> technical -> standard -> complex. Escalation is purely
  * positional in that list -- e.g. a technical conversation that just keeps
  * going (4+ messages) without any further technical question will still
@@ -25,26 +38,32 @@ export type Tier = "trivial" | "technical" | "standard" | "complex";
 const TIER_ORDER: Tier[] = ["trivial", "technical", "standard", "complex"];
 
 export interface TierConfig {
-  /** `{provider}/{model}` string for the Gateway's compat endpoint. */
-  model: string;
-  /** Shown in the UI's model indicator. */
+  /** Shown in the UI's model indicator -- what src/index.ts's own tier
+   * classification implies will answer, once the Dynamic Route resolves it. */
   label: string;
 }
+
+// Every tier's actual model call goes through this one Dynamic Route --
+// the route's own conditional chain (keyed on the `tier` value attached via
+// cf-aig-metadata) does the real selection. See src/gateway.ts's comment
+// for the route's element graph, or fetch it directly:
+// GET /accounts/{account}/ai-gateway/gateways/{gateway}/routes/{id}
+export const DYNAMIC_ROUTE_MODEL = "dynamic/pgc-tier-router";
 
 export const TIER_CONFIG: Record<Tier, TierConfig> = {
   // Switched from llama-3.3-70b-instruct-fp8-fast after a head-to-head
   // benchmark against the real system prompt: Scout was 30-90% faster and
   // matched or beat 3.3 on accuracy (it caught an out-of-stock detail 3.3
   // missed, and was more proactively helpful on a bundle-pricing question).
-  trivial: { model: "workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout (Workers AI)" },
+  trivial: { label: "Llama 4 Scout (Workers AI)" },
   // Benchmarked against deepseek-v4-flash-0731 (returned an empty response
   // on a technical question -- reliability concern) and
   // deepseek-r1-distill-qwen-32b (107s response time, leaked raw <think>
   // reasoning into the reply). gpt-oss-120b was fast and accurate on a
   // real coffee-extraction-theory question.
-  technical: { model: "workers-ai/@cf/openai/gpt-oss-120b", label: "GPT-OSS 120B (Workers AI)" },
-  standard: { model: "anthropic/claude-haiku-4-5-20251001", label: "Claude Haiku" },
-  complex: { model: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet" },
+  technical: { label: "GPT-OSS 120B (Workers AI)" },
+  standard: { label: "Claude Haiku" },
+  complex: { label: "Claude Sonnet" },
 };
 
 // Signals a bulk/business-buyer conversation -- escalate straight to the

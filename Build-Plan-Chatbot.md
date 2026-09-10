@@ -149,7 +149,9 @@ steps verified working live against production as of checklist item 27.
 | Standard | Conversation has gone deeper (4+ messages exchanged), without technical or B2B signals | Claude Haiku |
 | Complex | 12+ messages, **or** a genuine B2B/bulk signal (`kg`, `bulk`, `wholesale`, `business`, `bundle`, `office`, `cafe`) | Claude Sonnet |
 
-Order is `trivial -> technical -> standard -> complex`, and **escalation is purely positional in that list, not "how serious is this."** A technical conversation that just keeps going without another technical question still gets promoted to `standard` on length alone once it crosses 4 messages, since `standard` sits above `technical` in the ladder -- confirmed as the intended behavior, not a bug, when this was raised during design. Once a session reaches a higher tier it **never drops back down** for the rest of that conversation, even if a later message looks trivial in isolation. Logic lives in `src/modelRouting.ts` (`classifyTier`); the tier itself is stored per-session in the `ChatSession` Durable Object.
+Order is `trivial -> technical -> standard -> complex`, and **escalation is purely positional in that list, not "how serious is this."** A technical conversation that just keeps going without another technical question still gets promoted to `standard` on length alone once it crosses 4 messages, since `standard` sits above `technical` in the ladder -- confirmed as the intended behavior, not a bug, when this was raised during design. Once a session reaches a higher tier it **never drops back down** for the rest of that conversation, even if a later message looks trivial in isolation. Classification (`classifyTier`) lives in `src/modelRouting.ts`; the tier itself is stored per-session in the `ChatSession` Durable Object.
+
+**The actual model selection is a real Dynamic Route, not just code.** Classification has to happen in our own Worker code (Dynamic Routing's `conditional` node can't read free-text prompt content, only structured `metadata.*` fields), but rather than resolving straight to a model string ourselves, the Worker attaches the computed tier via `cf-aig-metadata: {"tier": "..."}`  and calls `dynamic/pgc-tier-router` -- a Dynamic Route (created via the API) whose element graph is a chain of `conditional` nodes keyed on `metadata.tier`, each branching to the matching `model` node (Sonnet/Haiku/GPT-OSS 120B/Llama 4 Scout). This genuinely exercises the Gateway's routing capability for the demo, rather than only picking a model in application code. Verified all 4 branches resolve to the correct model in both streaming and non-streaming mode, then verified the full chat path end-to-end (local + production) escalates trivial -> technical -> standard -> complex correctly through the live route. Dynamic Routing's `percentage` node was unreliable in this account (item 22 below), but `conditional` chains held up under this testing.
 
 Added after the initial Phase 2 pitch, based on a design discussion about
 using Dynamic Routing to split traffic by prompt type. Summary of the
@@ -160,10 +162,15 @@ reasoning):
   fields (`metadata.*`) via Dynamic Routing's `conditional` node. All
   classification happens in our own Worker code (`src/modelRouting.ts`),
   before the request is sent.
-- **Chose code-based routing over Dynamic Routing's dashboard graph**,
+- **Initially chose code-based model selection over a Dynamic Route**,
   consistent with the item-22 finding that the `percentage` node was
   unreliable in this account -- didn't want to build a new production path
-  on an untested dashboard feature.
+  on an untested dashboard feature. Later, specifically to showcase the
+  Gateway's routing capability for the demo, built and rigorously tested a
+  `pgc-tier-router` Dynamic Route (a `conditional`-node chain keyed on
+  `metadata.tier`) as a second opinion on the `percentage` finding -- it
+  held up cleanly (all 4 branches correct, streaming and non-streaming),
+  so model selection now genuinely happens in the Gateway, not just in code.
 - **A "Taglish -> different model" tier was explored and rejected.**
   Qwen3 (Workers AI) was tested against the real system prompt with 5 real
   Taglish questions and inconsistently swung between full English (ignoring

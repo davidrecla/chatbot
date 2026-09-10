@@ -42,9 +42,10 @@ API access). Deployed secrets are set separately with `wrangler secret put`.
   OpenAI-compatible endpoint (`compat/chat/completions`). Despite the
   filename (kept to minimize churn), it's not Anthropic-only -- it's what
   every tier in `src/modelRouting.ts` calls through.
-- `src/modelRouting.ts` -- **which model answers a given message.** 4 tiers,
-  in escalating order (`trivial -> technical -> standard -> complex`; a
-  session's tier only ever moves right, never back):
+- `src/modelRouting.ts` -- **which *tier* a message belongs to** (the actual
+  model pick happens in the Gateway, see below). 4 tiers, escalating order
+  (`trivial -> technical -> standard -> complex`; a session's tier only
+  ever moves right, never back):
   - `trivial` -> Llama 4 Scout (Workers AI): basic questions, <4 messages in.
   - `technical` -> GPT-OSS 120B (Workers AI): message asks *how/why*
     something works (`explain`, `extraction`, `ratio`, `grind`, etc.).
@@ -52,6 +53,12 @@ API access). Deployed secrets are set separately with `wrangler secret put`.
     messages) without a technical or B2B signal.
   - `complex` -> Claude Sonnet: 12+ messages, or a bulk/B2B signal
     (`kg`, `bulk`, `wholesale`, `business`, `bundle`, `office`, `cafe`).
+  Every call goes to `dynamic/pgc-tier-router` (a Dynamic Route on the
+  Gateway, a chain of `conditional` nodes keyed on `metadata.tier`) rather
+  than resolving straight to a model string here -- the tier is attached
+  via `cf-aig-metadata` in src/index.ts, and the Route does the actual
+  model selection. This is deliberate: showcases the Gateway's routing
+  capability instead of just picking a model in application code.
 - `src/session.ts` -- `ChatSession` Durable Object (RPC-style): per-visitor
   message history + the session's current model tier (escalate-only, see
   above). Also a generous message-count cap as a storage-growth backstop.
