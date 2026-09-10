@@ -176,13 +176,6 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  /* Never let this flex item shrink below its content's natural size --
-     without this, some browsers could compute a narrower-than-content
-     width for very short messages, forcing them to wrap character by
-     character (e.g. "Hi" rendering as "H" / "i" on two lines). max-width
-     below still caps it normally for long messages. */
-  flex-shrink: 0;
-  min-width: 0;
   max-width: 82%;
 }
 
@@ -191,11 +184,14 @@ a:hover {
 }
 
 .msg {
-  /* Explicit fit-content (rather than relying on the nested flex
-     containers' default sizing) so short messages hug their own content
-     instead of occasionally collapsing to a near-zero width and wrapping
-     character-by-character on narrow/mobile viewports. */
-  width: fit-content;
+  /* display: inline-block (rather than a flex-item width trick like
+     fit-content, which turned out unreliable here) is a much older, far
+     more consistently-implemented way to make a box shrink-to-fit its own
+     content across browsers/engines -- fixes short messages (e.g. "Hi")
+     occasionally wrapping character-by-character on real mobile devices,
+     while longer messages that already wrap at normal word boundaries
+     were never visibly affected either way. */
+  display: inline-block;
   max-width: 100%;
   padding: 11px 15px;
   border-radius: var(--radius);
