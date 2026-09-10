@@ -1,4 +1,5 @@
 import { ClaudeApiError, streamClaudeReply, type GatewayRequestOptions } from "./claude";
+import { runAbTestOnce, runOutageDemo } from "./gateway";
 import { buildSystemPrompt } from "./knowledge";
 import { ChatSession } from "./session";
 import type { ChatMessage, ChatRequestBody, Env, FeedbackRequestBody } from "./types";
@@ -44,6 +45,9 @@ export default {
       }
       if (url.pathname === "/api/feedback" && request.method === "POST") {
         return await handleFeedback(request, env);
+      }
+      if (url.pathname === "/api/demo/resilience" && request.method === "POST") {
+        return await handleResilienceDemo(request, env);
       }
       return env.ASSETS.fetch(request);
     } catch (err) {
@@ -107,6 +111,28 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
     return jsonResponse(502, { error: "Could not record feedback" });
   }
   return jsonResponse(200, { ok: true });
+}
+
+/**
+ * POST /api/demo/resilience -- the "Resilience Lab" (Build-Plan-Chatbot.md
+ * checklist items 22-23). Admin/demo-only surface, not part of the everyday
+ * chat path. Body: { "mode": "outage" | "ab-test" }.
+ */
+async function handleResilienceDemo(request: Request, env: Env): Promise<Response> {
+  let body: { mode?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse(400, { error: "Invalid JSON body" });
+  }
+
+  try {
+    const result = body.mode === "ab-test" ? await runAbTestOnce(env) : await runOutageDemo(env);
+    return jsonResponse(200, result);
+  } catch (err) {
+    console.error(err);
+    return jsonResponse(502, { error: "Demo call failed" });
+  }
 }
 
 interface ClaudeReplyResult {
