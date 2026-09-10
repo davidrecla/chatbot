@@ -1,15 +1,9 @@
 /**
  * Helpers for the AI Gateway "Resilience Lab" demo (Build-Plan-Chatbot.md
- * checklist items 22-23) and, later, the /insights panel's REST/Analytics
- * calls (item 24). Kept separate from claude.ts, which is the main chat's
+ * checklist items 22-23) and the /insights panel's REST/Analytics calls
+ * (item 24). Kept separate from claude.ts, which is the main chat's
  * everyday code path -- this file is only touched by the admin-only demo
  * surface, so the everyday path stays simple.
- *
- * Fallback demo: a Dynamic Route ("pgc-resilience-outage-demo") configured
- * in the dashboard/API with an intentionally-invalid primary Anthropic
- * model, so it deterministically falls back to Workers AI every time --
- * a reliable, repeatable way to demo "provider goes down, zero downtime"
- * without depending on a real outage.
  *
  * A/B demo: Dynamic Routing's "percentage" node turned out to error at
  * request time in this account even with a config matching the documented
@@ -20,12 +14,16 @@
  * (`{provider}/{model}` addressing) -- still logged, cached, and
  * spend-limited by the Gateway like any other request, just the routing
  * decision lives in code instead of dashboard config.
+ *
+ * The "simulate provider outage" demo (a Dynamic Route,
+ * "pgc-resilience-outage-demo", with an intentionally-invalid primary model
+ * so it deterministically fell back to Workers AI) was retired -- no longer
+ * used, and the route itself was deleted from the Gateway.
  */
 
 import type { Env } from "./types";
 
 const DEMO_PROMPT = "Give one short, fun fact about coffee in a single sentence.";
-const OUTAGE_DEMO_ROUTE = "dynamic/pgc-resilience-outage-demo";
 const AB_VARIANTS = [
   { label: "A: Claude Haiku", model: "anthropic/claude-haiku-4-5-20251001" },
   { label: "B: Workers AI Llama 3.3", model: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
@@ -92,11 +90,6 @@ async function callCompat(env: Env, model: string, label: string): Promise<DemoC
     cached,
     text: data.choices?.[0]?.message?.content ?? "(empty response)",
   };
-}
-
-/** "Simulate outage" -- calls the Dynamic Route whose primary model is intentionally broken. */
-export async function runOutageDemo(env: Env): Promise<DemoCallResult> {
-  return callCompat(env, OUTAGE_DEMO_ROUTE, "Outage simulation");
 }
 
 /** Runs one randomly-picked A/B variant, the way real traffic would be split. */

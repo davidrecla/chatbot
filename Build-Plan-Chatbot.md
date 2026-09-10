@@ -72,6 +72,7 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [x] 21. Implement `POST /api/feedback` (👍/👎 buttons in UI → `env.AI.gateway("pgc-chatbot").patchLog(...)`). Added an `ai` binding to `wrangler.jsonc` for this (no separate token needed). `claude.ts` now captures the `cf-aig-log-id` response header; `index.ts` sends it to the client as a leading `event: meta` SSE frame; `app.js` renders 👍/👎 under each reply once fully revealed. Verified end-to-end: clicking a rating actually sets `feedback` on the real Gateway log entry.
 - [x] 22. Configure a Dynamic Route (primary Claude → fallback Workers AI) in the dashboard. Created via API as `pgc-resilience-outage-demo`: primary is an intentionally-invalid Anthropic model id, so it deterministically always falls back to Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) -- a reliable, repeatable "simulate outage" demo. **Note**: also tried a `pgc-resilience-ab-test` route using Dynamic Routing's "percentage" node for the A/B split -- it errored at request time (`Failed to get response from provider`) even with a config matching the documented JSON schema exactly (confirmed the model-chain fallback route works fine on the same gateway, only the percentage node fails), so that route was deleted. A/B testing is instead implemented in Worker code (item 23) -- both variants still go through the Gateway.
 - [x] 23. Implement `src/gateway.ts` + `POST /api/demo/resilience` (OpenAI-compat endpoint) — isolated demo path (not part of the main chat), `{"mode": "outage" | "ab-test"}`. Outage mode calls `dynamic/pgc-resilience-outage-demo`. A/B mode randomly picks between `anthropic/claude-haiku-4-5-20251001` and `workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, calling each directly via `{provider}/{model}` addressing on the compat endpoint (see item 22 note). Needed a new `CF_API_TOKEN` secret (reused the same capable Cloudflare API token) since direct Workers AI addressing through the compat endpoint needs an `Authorization` header, unlike Dynamic Routes/`env.AI`. Added a random nonce to the demo prompt so repeated calls don't just replay the Gateway's exact-match cache and fake the split. Verified: outage mode always shows `provider: workers-ai`; A/B mode genuinely alternates between both models across repeated calls.
+  - **Retired (Phase 2.5)**: the "outage" mode, its `pgc-resilience-outage-demo` Dynamic Route, and the "Simulate provider outage" button were removed at the user's request, no longer used. `handleResilienceDemo` now only runs the A/B mode; `runOutageDemo`/`OUTAGE_DEMO_ROUTE` were deleted from `src/gateway.ts`. `pgc-tier-router` (Phase 2.5) is a more compelling Dynamic Route to showcase now anyway -- it's live-routing real production chat traffic, not a one-off demo call.
 - [x] 24. Build `/insights` admin panel (`public/insights.html`, `insights.css`, `insights.js`): requests, cache-hit rate, spend, latency, feedback ratio, model/provider split, recent activity table, Resilience Lab controls (outage/A-B buttons calling `/api/demo/resilience`); pulls from `src/gateway.ts`'s `fetchInsightsSummary` (aggregates the last 50 log entries via the REST API -- `per_page` maxes at 50, not 100). Extensionless `/insights` resolves to `insights.html` automatically (Workers assets' default html handling).
 - [x] 25. Set up Cloudflare Access application protecting `/insights`; verify unauthenticated access is blocked. Created via API: self-hosted app covering `chatbot.puregroundscoffee.com/insights`, `/api/insights`, and `/api/demo` (so the panel's backing endpoints are gated too, not just the page). Policy allows email domains: `puregroundscoffee.com`, `cloudflare.com`, `metrobank.com.ph`, `nexustech.com.ph`. Verified: unauthenticated requests to all three paths get a `302` to the Cloudflare Access login page.
 - [x] 26. Confirm/log Logpush and Unified Billing/ZDR as optional talking points (dashboard-only, not required to wire up). Confirmed current gateway state: `logpush: false` (not enabled -- pitch as "available on a paid plan, exports logs to R2/S3/SIEM, flip a toggle when you want it"), `zdr: false` (pitch as "available for Unified Billing traffic if PII-adjacent use cases need it"), `wholesale: true`, `workers_ai_billing_mode: "postpaid"`. Not wiring these up now, per plan -- see "Demo script" below for exact talking points to use live.
@@ -110,17 +111,21 @@ steps verified working live against production as of checklist item 27.
    Log in with an approved email (puregroundscoffee.com or the other
    allowed domains) -- point out this page itself is Access-gated, so only
    approved staff ever see it.
-8. **Click "Simulate provider outage"** in the Resilience Lab. Point out:
-   the response still comes back, served by `workers-ai` instead of
-   `anthropic` -- *"if Claude's API has a bad day, customers don't notice."*
-9. **Click "Run A/B split" a few times.** Point out the label/model
+8. **Click "Run A/B split" a few times.** Point out the label/model
    changing between clicks -- *"you can compare quality or cost between
    models on live traffic, or roll out a new model gradually."*
-10. **Close with the extras**: Unified Billing (single Cloudflare invoice
-    instead of separate provider accounts), Logpush (export every log to
-    your own S3/R2/SIEM once you're on a paid plan), Zero Data Retention
-    (available if a future use case needs it for compliance). None of these
-    are wired up, they're a checkbox away when the team wants them.
+9. **Close with the extras**: Unified Billing (single Cloudflare invoice
+   instead of separate provider accounts), Logpush (export every log to
+   your own S3/R2/SIEM once you're on a paid plan), Zero Data Retention
+   (available if a future use case needs it for compliance). None of these
+   are wired up, they're a checkbox away when the team wants them.
+
+(The "Simulate provider outage" demo, which used a since-retired Dynamic
+Route, `pgc-resilience-outage-demo`, is no longer part of this script --
+see Phase 2.5's `pgc-tier-router` for the current, actually-in-production
+Dynamic Route to showcase instead: open the Gateway's Dynamic Routes tab,
+show the `conditional`-node chain, and point out it's live-routing real
+chat traffic between 4 different models right now, not a one-off demo.)
 
 **Dry-run notes (ran live against production):**
 - Steps 1-3 confirmed working. One thing to know: Claude occasionally slips
@@ -321,7 +326,8 @@ chatbot/
 - **DLP**: predefined Financial/PII profiles, flag mode first.
 - **Intent/anomaly detection**: dashboard-level, no app change.
 - **Cloudflare Access**: protects the `/insights` admin panel (not the public chatbot, whose visitors are anonymous) — the honest place to demo "tie usage to real users."
-- **Fallbacks/Dynamic Routing/A-B testing**: isolated `/api/demo/resilience` endpoint using the OpenAI-compat endpoint + a dashboard-configured Dynamic Route; "simulate outage" and "A/B split" demo controls in the Insights panel.
+- **Dynamic Routing**: `pgc-tier-router` (Phase 2.5) is a real Dynamic Route live-routing production chat traffic between 4 models based on a `metadata.tier` conditional chain -- a stronger demo than a one-off call, since it's not staged.
+- **A/B testing**: isolated `/api/demo/resilience` endpoint + "Run A/B split" control in the Insights panel, using the OpenAI-compat endpoint directly (Dynamic Routing's `percentage` node was unreliable -- see item 22).
 - **Human feedback loop**: 👍/👎 buttons → `/api/feedback` → `patchLog`, visible/filterable in native Logs UI.
 - **"Gateway Insights" panel**: requests, cache-hit rate, spend, latency, feedback ratio, model/provider split, plus Resilience Lab controls — a companion to, not a replacement for, the native Cloudflare dashboard.
 - **Suggested additions beyond the requested list**: Unified Billing (single-invoice procurement pitch), Zero Data Retention (trust/compliance angle for PII-adjacent traffic). Explicitly not building on the deprecated Evaluations feature.

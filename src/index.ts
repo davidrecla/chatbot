@@ -1,5 +1,5 @@
 import { ClaudeApiError, streamModelReply, type GatewayRequestOptions } from "./claude";
-import { fetchInsightsSummary, fetchLogConversation, runAbTestOnce, runOutageDemo } from "./gateway";
+import { fetchInsightsSummary, fetchLogConversation, runAbTestOnce } from "./gateway";
 import { buildSystemPrompt } from "./knowledge";
 import { DYNAMIC_ROUTE_MODEL, TIER_CONFIG, type Tier } from "./modelRouting";
 import { ChatSession } from "./session";
@@ -48,7 +48,7 @@ export default {
         return await handleFeedback(request, env);
       }
       if (url.pathname === "/api/demo/resilience" && request.method === "POST") {
-        return await handleResilienceDemo(request, env);
+        return await handleResilienceDemo(env);
       }
       if (url.pathname === "/api/insights/summary" && request.method === "GET") {
         return await handleInsightsSummary(env);
@@ -123,18 +123,12 @@ async function handleFeedback(request: Request, env: Env): Promise<Response> {
 /**
  * POST /api/demo/resilience -- the "Resilience Lab" (Build-Plan-Chatbot.md
  * checklist items 22-23). Admin/demo-only surface, not part of the everyday
- * chat path. Body: { "mode": "outage" | "ab-test" }.
+ * chat path. (The "simulate outage" mode was retired along with the
+ * pgc-resilience-outage-demo Dynamic Route -- only the A/B demo remains.)
  */
-async function handleResilienceDemo(request: Request, env: Env): Promise<Response> {
-  let body: { mode?: string };
+async function handleResilienceDemo(env: Env): Promise<Response> {
   try {
-    body = await request.json();
-  } catch {
-    return jsonResponse(400, { error: "Invalid JSON body" });
-  }
-
-  try {
-    const result = body.mode === "ab-test" ? await runAbTestOnce(env) : await runOutageDemo(env);
+    const result = await runAbTestOnce(env);
     return jsonResponse(200, result);
   } catch (err) {
     console.error(err);

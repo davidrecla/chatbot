@@ -3,7 +3,6 @@ const modelBreakdownEl = document.getElementById("model-breakdown");
 const recentLogsEl = document.getElementById("recent-logs");
 const windowSizeEl = document.getElementById("window-size");
 const refreshBtn = document.getElementById("refresh-btn");
-const btnOutage = document.getElementById("btn-outage");
 const btnAbTest = document.getElementById("btn-abtest");
 const resultEl = document.getElementById("resilience-result");
 
@@ -152,19 +151,13 @@ function renderConversation(data) {
   conversationBodyEl.innerHTML = html;
 }
 
-async function runDemo(mode, button) {
-  const otherButton = mode === "outage" ? btnAbTest : btnOutage;
+async function runDemo(button) {
   button.disabled = true;
-  otherButton.disabled = true;
   resultEl.hidden = false;
   resultEl.innerHTML = "Calling the Gateway&hellip;";
 
   try {
-    const res = await fetch("/api/demo/resilience", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode }),
-    });
+    const res = await fetch("/api/demo/resilience", { method: "POST", headers: { "content-type": "application/json" } });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
 
@@ -176,13 +169,11 @@ async function runDemo(mode, button) {
     resultEl.innerHTML = `<div class="resilience-result__meta">Error</div><div>${err.message}</div>`;
   } finally {
     button.disabled = false;
-    otherButton.disabled = false;
     loadSummary();
   }
 }
 
 refreshBtn.addEventListener("click", loadSummary);
-btnOutage.addEventListener("click", () => runDemo("outage", btnOutage));
-btnAbTest.addEventListener("click", () => runDemo("ab-test", btnAbTest));
+btnAbTest.addEventListener("click", () => runDemo(btnAbTest));
 
 loadSummary();
