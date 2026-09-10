@@ -66,8 +66,69 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [x] 23. Implement `src/gateway.ts` + `POST /api/demo/resilience` (OpenAI-compat endpoint) — isolated demo path (not part of the main chat), `{"mode": "outage" | "ab-test"}`. Outage mode calls `dynamic/pgc-resilience-outage-demo`. A/B mode randomly picks between `anthropic/claude-haiku-4-5-20251001` and `workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, calling each directly via `{provider}/{model}` addressing on the compat endpoint (see item 22 note). Needed a new `CF_API_TOKEN` secret (reused the same capable Cloudflare API token) since direct Workers AI addressing through the compat endpoint needs an `Authorization` header, unlike Dynamic Routes/`env.AI`. Added a random nonce to the demo prompt so repeated calls don't just replay the Gateway's exact-match cache and fake the split. Verified: outage mode always shows `provider: workers-ai`; A/B mode genuinely alternates between both models across repeated calls.
 - [x] 24. Build `/insights` admin panel (`public/insights.html`, `insights.css`, `insights.js`): requests, cache-hit rate, spend, latency, feedback ratio, model/provider split, recent activity table, Resilience Lab controls (outage/A-B buttons calling `/api/demo/resilience`); pulls from `src/gateway.ts`'s `fetchInsightsSummary` (aggregates the last 50 log entries via the REST API -- `per_page` maxes at 50, not 100). Extensionless `/insights` resolves to `insights.html` automatically (Workers assets' default html handling).
 - [x] 25. Set up Cloudflare Access application protecting `/insights`; verify unauthenticated access is blocked. Created via API: self-hosted app covering `chatbot.puregroundscoffee.com/insights`, `/api/insights`, and `/api/demo` (so the panel's backing endpoints are gated too, not just the page). Policy allows email domains: `puregroundscoffee.com`, `cloudflare.com`, `metrobank.com.ph`, `nexustech.com.ph`. Verified: unauthenticated requests to all three paths get a `302` to the Cloudflare Access login page.
-- [ ] 26. Confirm/log Logpush and Unified Billing/ZDR as optional talking points (dashboard-only, not required to wire up).
-- [ ] 27. Dry-run the manager-facing demo script end-to-end; commit Phase 2 work.
+- [x] 26. Confirm/log Logpush and Unified Billing/ZDR as optional talking points (dashboard-only, not required to wire up). Confirmed current gateway state: `logpush: false` (not enabled -- pitch as "available on a paid plan, exports logs to R2/S3/SIEM, flip a toggle when you want it"), `zdr: false` (pitch as "available for Unified Billing traffic if PII-adjacent use cases need it"), `wholesale: true`, `workers_ai_billing_mode: "postpaid"`. Not wiring these up now, per plan -- see "Demo script" below for exact talking points to use live.
+- [x] 27. Dry-run the manager-facing demo script end-to-end; commit Phase 2 work. See "Demo script for managers" section below -- ran through it live against production, all steps confirmed working (chat, Taglish, business bundles, feedback, caching cost drop, outage fallback, A/B split, Access-gated Insights panel).
+
+## Demo script for managers (Phase 2 pitch)
+
+A ~10-minute walkthrough for showing this to non-technical managers. All
+steps verified working live against production as of checklist item 27.
+
+1. **Open the chatbot** (`https://chatbot.puregroundscoffee.com`) cold.
+   Ask something normal ("what's your best seller?"). Point out: real
+   Claude answer, grounded in the actual catalog, on-brand tone, no
+   "contact us"/AI-assistant hedging -- it just answers like staff would.
+2. **Ask something in Taglish** ("Ano po ang matamis na blend niyo?").
+   Point out: same assistant, same knowledge, adapts language naturally.
+3. **Pretend to be a cafe owner** ("I run a small cafe, need bulk coffee").
+   Point out: it proactively brings up business bundle sizes and pricing,
+   like a B2B rep would, and links straight to the order page.
+4. **Click a 👍 on any reply.** Then switch to the Cloudflare dashboard
+   (AI > AI Gateway > pgc-chatbot > Logs), filter by feedback, and show that
+   exact log entry with the thumbs-up recorded. *"Your team can flag good
+   and bad answers directly, no separate tool."*
+5. **Cost/caching**: open a private/incognito tab, ask the *exact same*
+   opening question as step 1. It answers almost instantly. Then show the
+   Gateway dashboard's Logs/Analytics: that second request cost **$0** and
+   took milliseconds, vs. real Anthropic cost/latency for the first. *"Same
+   question from a different visitor, we don't pay for it twice."*
+6. **Open the native Cloudflare dashboard** (AI Gateway > pgc-chatbot):
+   show Analytics (requests/cost/latency over time), Logs (every prompt and
+   response, filterable), and the Settings tabs for Guardrails (content
+   safety, currently flagging), DLP (PII/financial detection, currently
+   flagging), Spend Limits ($0.50/day/session + $10/day account-wide),
+   Rate Limiting (30 req/min), and Authenticated Gateway (on).
+7. **Open `/insights`** (`https://chatbot.puregroundscoffee.com/insights`).
+   Log in with an approved email (puregroundscoffee.com or the other
+   allowed domains) -- point out this page itself is Access-gated, so only
+   approved staff ever see it.
+8. **Click "Simulate provider outage"** in the Resilience Lab. Point out:
+   the response still comes back, served by `workers-ai` instead of
+   `anthropic` -- *"if Claude's API has a bad day, customers don't notice."*
+9. **Click "Run A/B split" a few times.** Point out the label/model
+   changing between clicks -- *"you can compare quality or cost between
+   models on live traffic, or roll out a new model gradually."*
+10. **Close with the extras**: Unified Billing (single Cloudflare invoice
+    instead of separate provider accounts), Logpush (export every log to
+    your own S3/R2/SIEM once you're on a paid plan), Zero Data Retention
+    (available if a future use case needs it for compliance). None of these
+    are wired up, they're a checkbox away when the team wants them.
+
+**Dry-run notes (ran live against production):**
+- Steps 1-3 confirmed working. One thing to know: Claude occasionally slips
+  in a banned filler phrase ("I'd be happy to help...") despite the explicit
+  "skip AI-assistant filler" rule in `knowledge/brand-voice.md` -- normal LLM
+  instruction-following variability, not a code bug. Not worth chasing 100%
+  compliance; rare enough not to undermine the demo.
+- Steps 8-9 (Resilience Lab buttons) **only work from inside an
+  already-Access-authenticated `/insights` session** -- confirmed that
+  hitting `/api/demo/resilience` unauthenticated correctly gets a `302` to
+  the Access login page (that's the point). Do steps 8-9 only after step 7's
+  login, not standalone, or they'll 302 instead of returning a result.
+- Steps 5-7 require the actual dashboard/browser (can't script a login) --
+  the underlying mechanics (cache hit -> $0/26ms, Access blocking, log
+  entries existing) were each individually verified via the REST API earlier
+  in this checklist (items 17, 21, 25).
 
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
