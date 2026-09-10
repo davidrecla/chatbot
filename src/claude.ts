@@ -65,6 +65,17 @@ function anthropicHeaders(env: Env, options?: GatewayRequestOptions): HeadersIni
   return headers;
 }
 
+export interface ClaudeReply {
+  stream: ReadableStream<string>;
+  /**
+   * The Gateway's `cf-aig-log-id` for this request, if routed through the
+   * Gateway -- lets the client later attach 👍/👎 feedback to this exact
+   * log entry via `POST /api/feedback` (see src/index.ts and patchLog in
+   * the AI binding).
+   */
+  logId: string | null;
+}
+
 /**
  * Streams a Claude response as a sequence of plain UTF-8 text chunks (just
  * the assistant's text deltas, no SSE framing) via a TransformStream applied
@@ -76,7 +87,7 @@ export async function streamClaudeReply(
   systemPrompt: string,
   messages: ChatMessage[],
   options?: GatewayRequestOptions,
-): Promise<ReadableStream<string>> {
+): Promise<ClaudeReply> {
   const res = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, {
     method: "POST",
     headers: anthropicHeaders(env, options),
@@ -94,7 +105,10 @@ export async function streamClaudeReply(
     throw new ClaudeApiError(res.status, `Anthropic API error (${res.status}): ${detail.slice(0, 500)}`);
   }
 
-  return res.body.pipeThrough(new TextDecoderStream()).pipeThrough(sseTextDeltaExtractor());
+  return {
+    stream: res.body.pipeThrough(new TextDecoderStream()).pipeThrough(sseTextDeltaExtractor()),
+    logId: res.headers.get("cf-aig-log-id"),
+  };
 }
 
 /**

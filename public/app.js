@@ -69,17 +69,21 @@ function appendMessage(role, text) {
     row.appendChild(avatar);
   }
 
+  const col = document.createElement("div");
+  col.className = "msg-col";
+
   const bubble = document.createElement("div");
   bubble.className = `msg msg--${role}`;
   bubble.textContent = text;
-  row.appendChild(bubble);
+  col.appendChild(bubble);
+  row.appendChild(col);
 
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return bubble;
 }
 
-/** Creates an empty assistant bubble showing an animated "typing..." indicator. */
+/** Creates an empty assistant bubble (inside a column, for feedback controls later) showing an animated "typing..." indicator. */
 function appendTypingBubble() {
   const row = document.createElement("div");
   row.className = "msg-row msg-row--assistant";
@@ -90,14 +94,53 @@ function appendTypingBubble() {
   avatar.alt = "";
   row.appendChild(avatar);
 
+  const col = document.createElement("div");
+  col.className = "msg-col";
+
   const bubble = document.createElement("div");
   bubble.className = "msg msg--assistant msg--pending";
   bubble.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
-  row.appendChild(bubble);
+  col.appendChild(bubble);
+  row.appendChild(col);
 
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return bubble;
+}
+
+/** Adds 👍/👎 controls below a reply, wired to POST /api/feedback (AI Gateway patchLog). */
+function addFeedbackControls(bubble, logId) {
+  const col = bubble.parentElement;
+  if (!col) return;
+
+  const wrap = document.createElement("div");
+  wrap.className = "msg-feedback";
+
+  const makeButton = (label, rating) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "msg-feedback__btn";
+    btn.textContent = label;
+    btn.setAttribute("aria-label", rating === 1 ? "Good response" : "Not helpful");
+    btn.addEventListener("click", async () => {
+      for (const el of wrap.querySelectorAll("button")) el.disabled = true;
+      btn.classList.add("msg-feedback__btn--selected");
+      try {
+        await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ logId, rating }),
+        });
+      } catch {
+        // Feedback is a nice-to-have -- silently ignore network failures here.
+      }
+    });
+    return btn;
+  };
+
+  wrap.appendChild(makeButton("\u{1F44D}", 1));
+  wrap.appendChild(makeButton("\u{1F44E}", -1));
+  col.appendChild(wrap);
 }
 
 function autoGrow() {
@@ -106,12 +149,13 @@ function autoGrow() {
 }
 inputEl.addEventListener("input", autoGrow);
 
-/** Reads the full SSE stream from `res` and returns the complete reply text. */
+/** Reads the full SSE stream from `res`, returning the reply text and the Gateway log id (if any). */
 async function collectFullText(res) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let sseBuffer = "";
   let full = "";
+  let logId = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -121,15 +165,21 @@ async function collectFullText(res) {
     const events = sseBuffer.split("\n\n");
     sseBuffer = events.pop() ?? "";
     for (const raw of events) {
-      const isDoneEvent = raw.startsWith("event: done");
+      const eventLine = raw.split("\n").find((line) => line.startsWith("event:"));
+      const eventName = eventLine?.slice("event:".length).trim();
       const dataLine = raw.split("\n").find((line) => line.startsWith("data:"));
       if (!dataLine) continue;
       const json = dataLine.slice("data:".length).trim();
-      if (!json || isDoneEvent) continue;
-      full += JSON.parse(json);
+      if (!json) continue;
+
+      if (eventName === "meta") {
+        logId = JSON.parse(json).logId ?? null;
+      } else if (eventName !== "done") {
+        full += JSON.parse(json);
+      }
     }
   }
-  return full;
+  return { full, logId };
 }
 
 async function sendMessage(message) {
@@ -156,7 +206,7 @@ async function sendMessage(message) {
       throw new Error(data.error || `Request failed (${res.status})`);
     }
 
-    const full = await collectFullText(res);
+    const { full, logId } = await collectFullText(res);
 
     // Keep the typing indicator up for a duration scaled to the reply's
     // length, even if the network already finished faster than that.
@@ -169,6 +219,7 @@ async function sendMessage(message) {
       bubble.textContent = "Sorry, I didn't get a response. Please try again.";
     } else {
       bubble.innerHTML = renderMarkdownLite(full);
+      if (logId) addFeedbackControls(bubble, logId);
     }
     messagesEl.scrollTop = messagesEl.scrollHeight;
   } catch (err) {

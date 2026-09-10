@@ -9,6 +9,10 @@ import type { ChatSession } from "./session";
 export interface Env {
   ASSETS: Fetcher;
   CHAT_SESSION: DurableObjectNamespace<ChatSession>;
+  // Workers AI binding -- used for env.AI.gateway(id).patchLog(...) (feedback,
+  // checklist item 21). Its permissions come from the Worker's own account,
+  // no separate token needed.
+  AI: Ai;
 
   // --- Non-secret vars (wrangler.jsonc `vars`) ---
   ANTHROPIC_BASE_URL: string;
@@ -35,4 +39,10 @@ export interface ChatMessage {
 /** Body accepted by POST /api/chat */
 export interface ChatRequestBody {
   message: string;
+}
+
+/** Body accepted by POST /api/feedback */
+export interface FeedbackRequestBody {
+  logId: string;
+  rating: 1 | -1;
 }

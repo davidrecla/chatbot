@@ -1,7 +1,7 @@
 import { ClaudeApiError, streamClaudeReply, type GatewayRequestOptions } from "./claude";
 import { buildSystemPrompt } from "./knowledge";
 import { ChatSession } from "./session";
-import type { ChatMessage, ChatRequestBody, Env } from "./types";
+import type { ChatMessage, ChatRequestBody, Env, FeedbackRequestBody } from "./types";
 
 export { ChatSession };
 
@@ -42,6 +42,9 @@ export default {
       if (url.pathname === "/api/chat" && request.method === "POST") {
         return await handleChat(request, env, ctx);
       }
+      if (url.pathname === "/api/feedback" && request.method === "POST") {
+        return await handleFeedback(request, env);
+      }
       return env.ASSETS.fetch(request);
     } catch (err) {
       console.error(err);
@@ -69,8 +72,8 @@ async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Pr
 
   const { history, limitReached } = await stub.appendMessage({ role: "user", content: message });
 
-  const textStream = limitReached
-    ? staticTextStream(CAP_REACHED_MESSAGE)
+  const { stream: textStream, logId } = limitReached
+    ? { stream: staticTextStream(CAP_REACHED_MESSAGE), logId: null }
     : await claudeReplyStream(env, history, stub, sessionId);
 
   const headers = new Headers({
@@ -80,7 +83,35 @@ async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Pr
   });
   if (setCookie) headers.set("set-cookie", setCookie);
 
-  return new Response(textStream.pipeThrough(sseEncoder()), { headers });
+  const encoder = new TextEncoder();
+  const metaFrame = encoder.encode(`event: meta\ndata: ${JSON.stringify({ logId })}\n\n`);
+  return new Response(prependBytes(textStream.pipeThrough(sseEncoder()), metaFrame), { headers });
+}
+
+/** POST /api/feedback -- attaches a 👍/👎 to a specific Gateway log entry. */
+async function handleFeedback(request: Request, env: Env): Promise<Response> {
+  let body: FeedbackRequestBody;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse(400, { error: "Invalid JSON body" });
+  }
+  if (!body.logId || (body.rating !== 1 && body.rating !== -1)) {
+    return jsonResponse(400, { error: "logId and rating (1 or -1) are required" });
+  }
+
+  try {
+    await env.AI.gateway(env.CF_AI_GATEWAY_ID ?? "pgc-chatbot").patchLog(body.logId, { feedback: body.rating });
+  } catch (err) {
+    console.error(err);
+    return jsonResponse(502, { error: "Could not record feedback" });
+  }
+  return jsonResponse(200, { ok: true });
+}
+
+interface ClaudeReplyResult {
+  stream: ReadableStream<string>;
+  logId: string | null;
 }
 
 /** Streams Claude's reply and, once fully streamed, saves it as the session's assistant turn. */
@@ -89,21 +120,21 @@ async function claudeReplyStream(
   history: ChatMessage[],
   stub: DurableObjectStub<ChatSession>,
   sessionId: string,
-): Promise<ReadableStream<string>> {
-  let claudeStream: ReadableStream<string>;
+): Promise<ClaudeReplyResult> {
+  let reply: { stream: ReadableStream<string>; logId: string | null };
   try {
-    claudeStream = await streamClaudeReply(env, buildSystemPrompt(), history, {
+    reply = await streamClaudeReply(env, buildSystemPrompt(), history, {
       metadata: { session_id: sessionId, surface: "public-chat" },
       ...openingQuestionCacheOptions(history),
     });
   } catch (err) {
     const message = err instanceof ClaudeApiError ? err.message : "Something went wrong reaching Claude.";
     console.error(err);
-    return staticTextStream(`Sorry, I ran into a problem: ${message}`, "error");
+    return { stream: staticTextStream(`Sorry, I ran into a problem: ${message}`, "error"), logId: null };
   }
 
   let full = "";
-  return claudeStream.pipeThrough(
+  const stream = reply.stream.pipeThrough(
     new TransformStream<string, string>({
       transform(chunk, controller) {
         full += chunk;
@@ -114,6 +145,28 @@ async function claudeReplyStream(
       },
     }),
   );
+  return { stream, logId: reply.logId };
+}
+
+/** Prepends a raw byte chunk (e.g. an SSE frame) before the rest of a byte stream. */
+function prependBytes(source: ReadableStream<Uint8Array>, prefix: Uint8Array): ReadableStream<Uint8Array> {
+  const reader = source.getReader();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(prefix);
+    },
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
 }
 
 function staticTextStream(text: string, tag: "text" | "error" = "text"): ReadableStream<string> {
