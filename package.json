@@ -1,0 +1,25 @@
+{
+  "name": "pgc-chatbot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure Grounds Coffee Co. chatbot \u2014 Claude-powered, Cloudflare Workers, AI Gateway showcase",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build:knowledge": "cross-env NODE_OPTIONS=--use-system-ca tsx scripts/build-knowledge.ts",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260901.1",
+    "cheerio": "^1.2.0",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
+    "wrangler": "4.128.0"
+  },
+  "overrides": {
+    "sharp": "^0.35.4"
+  }
+}

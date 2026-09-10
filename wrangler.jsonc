@@ -1,0 +1,57 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pgc-chatbot",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Bakes the knowledge-base markdown files into the Worker bundle as plain
+  // strings at build/deploy time (Workers have no filesystem at runtime).
+  // See src/knowledge.ts.
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+
+  // Serves the chat UI (and, in Phase 2, the /insights admin panel) from ./public.
+  // run_worker_first ensures src/index.ts always runs first so it can handle
+  // /api/* routes and (later) gate /insights, deferring to static files otherwise.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+
+  // Per-visitor chat history, keyed by a session cookie. See src/session.ts.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT_SESSION",
+        "class_name": "ChatSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ChatSession"]
+    }
+  ],
+
+  // Non-secret config. Secrets (ANTHROPIC_API_KEY, and later the AI Gateway
+  // token) are set with `wrangler secret put` and must never be committed here.
+  "vars": {
+    // Phase 1: direct Anthropic API. Phase 2 swaps this to the AI Gateway's
+    // Anthropic-compatible endpoint (see Build-Plan-Chatbot.md, checklist #15) --
+    // that's the only line that needs to change to put the Gateway in the loop.
+    "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-5",
+    "ANTHROPIC_MAX_TOKENS": "1024"
+  },
+
+  // Custom Domain: puregroundscoffee.com's zone is on this same Cloudflare
+  // account, so `wrangler deploy` creates the DNS record + TLS cert for us.
+  "routes": [
+    {
+      "pattern": "chatbot.puregroundscoffee.com",
+      "custom_domain": true
+    }
+  ]
+}

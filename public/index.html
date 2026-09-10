@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ask Pure Grounds Coffee Co.</title>
+    <meta
+      name="description"
+      content="Chat with Pure Grounds Coffee Co.'s AI assistant about our coffees, pricing, brewing tips, and business bundles."
+    />
+    <link rel="icon" type="image/png" href="/assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="https://puregroundscoffee.com" target="_blank" rel="noopener">
+        <img class="brand__logo" src="/assets/logo.png" alt="Pure Grounds Coffee Co." width="36" height="36" />
+        <span class="brand__name">Pure Grounds Coffee Co.</span>
+      </a>
+      <a class="site-header__link" href="https://puregroundscoffee.com" target="_blank" rel="noopener">
+        Visit the shop &rarr;
+      </a>
+    </header>
+
+    <main class="chat">
+      <div class="chat__intro">
+        <h1>Ask us anything about our coffee</h1>
+        <p>
+          Products, pricing, tasting notes, brewing tips, business bundles &mdash; our assistant knows the
+          Pure Grounds catalog and story. For orders, stock, or anything urgent, reach us directly at
+          <a href="mailto:hello@puregroundscoffee.com">hello@puregroundscoffee.com</a>.
+        </p>
+      </div>
+
+      <div id="messages" class="chat__messages" aria-live="polite"></div>
+
+      <form id="composer" class="composer">
+        <textarea
+          id="input"
+          class="composer__input"
+          placeholder="Ask about a coffee, price, or brewing tip..."
+          rows="1"
+          maxlength="2000"
+          required
+        ></textarea>
+        <button type="submit" class="composer__send" id="send-button">Send</button>
+      </form>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        This assistant can make mistakes &mdash; please verify prices, stock, and policies on
+        <a href="https://puregroundscoffee.com" target="_blank" rel="noopener">puregroundscoffee.com</a>.
+      </p>
+    </footer>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

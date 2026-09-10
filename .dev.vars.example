@@ -1,0 +1,16 @@
+# Copy this file to .dev.vars for local `wrangler dev` runs.
+# .dev.vars is gitignored -- never commit real secrets.
+
+# Anthropic Console API key (console.anthropic.com). Required in Phase 1.
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# --- Phase 2 (AI Gateway) -- leave unset until checklist item 14 ---
+# Token used to authenticate to the AI Gateway (cf-aig-authorization header).
+# CF_AIG_TOKEN=
+# Cloudflare account ID + AI Gateway ID, used to build the gateway base URL
+# and for the /api/insights REST calls.
+# CF_ACCOUNT_ID=
+# CF_AI_GATEWAY_ID=pgc-chatbot
+# API token with AI Gateway Read/Write permissions, used by /api/insights and
+# /api/feedback (patchLog) in Phase 2.
+# CF_API_TOKEN=
