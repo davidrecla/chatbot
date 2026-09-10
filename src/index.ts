@@ -1,5 +1,5 @@
 import { ClaudeApiError, streamClaudeReply, type GatewayRequestOptions } from "./claude";
-import { fetchInsightsSummary, runAbTestOnce, runOutageDemo } from "./gateway";
+import { fetchInsightsSummary, fetchLogConversation, runAbTestOnce, runOutageDemo } from "./gateway";
 import { buildSystemPrompt } from "./knowledge";
 import { ChatSession } from "./session";
 import type { ChatMessage, ChatRequestBody, Env, FeedbackRequestBody } from "./types";
@@ -51,6 +51,9 @@ export default {
       }
       if (url.pathname === "/api/insights/summary" && request.method === "GET") {
         return await handleInsightsSummary(env);
+      }
+      if (url.pathname === "/api/insights/log" && request.method === "GET") {
+        return await handleLogConversation(url, env);
       }
       return env.ASSETS.fetch(request);
     } catch (err) {
@@ -146,6 +149,19 @@ async function handleInsightsSummary(env: Env): Promise<Response> {
   } catch (err) {
     console.error(err);
     return jsonResponse(502, { error: "Could not load insights" });
+  }
+}
+
+/** GET /api/insights/log?id=... -- a readable transcript for one log entry (system prompt excluded). */
+async function handleLogConversation(url: URL, env: Env): Promise<Response> {
+  const id = url.searchParams.get("id");
+  if (!id) return jsonResponse(400, { error: "id query param is required" });
+  try {
+    const conversation = await fetchLogConversation(env, id);
+    return jsonResponse(200, conversation);
+  } catch (err) {
+    console.error(err);
+    return jsonResponse(502, { error: "Could not load conversation" });
   }
 }
 

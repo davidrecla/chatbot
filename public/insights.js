@@ -76,7 +76,7 @@ function renderSummary(summary) {
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
-      <tr><th>Time (PH)</th><th>Provider</th><th>Model</th><th>Cost</th><th>Cached</th><th>Feedback</th></tr>
+      <tr><th>Time (PH)</th><th>Provider</th><th>Model</th><th>Cost</th><th>Cached</th><th>Feedback</th><th></th></tr>
     </thead>
     <tbody>
       ${summary.recentLogs
@@ -89,12 +89,60 @@ function renderSummary(summary) {
           <td>${l.cost != null ? formatMoney(l.cost) : "-"}</td>
           <td>${l.cached ? "\u2705" : ""}</td>
           <td>${l.feedback === 1 ? "\u{1F44D}" : l.feedback === -1 ? "\u{1F44E}" : ""}</td>
+          <td><button type="button" class="recent-logs__view-btn" data-log-id="${l.id}">View</button></td>
         </tr>`,
         )
         .join("")}
     </tbody>
   `;
   recentLogsEl.appendChild(table);
+  for (const btn of table.querySelectorAll("[data-log-id]")) {
+    btn.addEventListener("click", () => openConversation(btn.dataset.logId));
+  }
+}
+
+// --- Conversation transcript modal ---
+
+const modalEl = document.getElementById("conversation-modal");
+const conversationBodyEl = document.getElementById("conversation-body");
+
+function escapeHtml(str) {
+  const escapes = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return str.replace(/[&<>"']/g, (ch) => escapes[ch]);
+}
+
+function closeModal() {
+  modalEl.hidden = true;
+}
+modalEl.addEventListener("click", (event) => {
+  if (event.target.hasAttribute("data-close")) closeModal();
+});
+
+async function openConversation(logId) {
+  modalEl.hidden = false;
+  conversationBodyEl.innerHTML = "<p class=\"insights__panel-desc\">Loading&hellip;</p>";
+  try {
+    const res = await fetch(`/api/insights/log?id=${encodeURIComponent(logId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    renderConversation(data);
+  } catch (err) {
+    conversationBodyEl.innerHTML = `<p class="insights__panel-desc">Couldn't load this conversation: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderConversation(data) {
+  const turns = data.messages ?? [];
+  let html = `<p class="transcript-meta">${turns.length} prior message(s) of context &middot; ${data.success === false ? "blocked/errored" : "succeeded"}${data.cost != null ? ` &middot; ${formatMoney(data.cost)}` : ""}</p>`;
+  for (const turn of turns) {
+    html += `<div class="transcript-turn transcript-turn--${turn.role === "user" ? "user" : "assistant"}">${escapeHtml(turn.content)}</div>`;
+  }
+  if (data.finalReply) {
+    html += `<div class="transcript-turn transcript-turn--assistant transcript-turn--current">${escapeHtml(data.finalReply)}</div>`;
+  } else if (data.success === false) {
+    html += `<div class="transcript-turn transcript-turn--assistant transcript-turn--current">(this request was blocked or errored -- no reply was generated)</div>`;
+  }
+  conversationBodyEl.innerHTML = html;
 }
 
 async function runDemo(mode, button) {

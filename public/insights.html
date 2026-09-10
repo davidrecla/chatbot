@@ -55,9 +55,21 @@
 
       <section class="insights__panel">
         <h2>Recent activity</h2>
+        <p class="insights__panel-desc">Click any row's "View" link for a clean transcript (system prompt/knowledge base excluded).</p>
         <div id="recent-logs" class="recent-logs"></div>
       </section>
     </main>
+
+    <div id="conversation-modal" class="conversation-modal" hidden>
+      <div class="conversation-modal__backdrop" data-close></div>
+      <div class="conversation-modal__panel">
+        <div class="conversation-modal__header">
+          <h3>Conversation</h3>
+          <button type="button" class="conversation-modal__close" data-close>&times;</button>
+        </div>
+        <div id="conversation-body" class="conversation-modal__body"></div>
+      </div>
+    </div>
 
     <script src="/insights.js" type="module"></script>
   </body>

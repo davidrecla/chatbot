@@ -209,3 +209,61 @@ export async function fetchInsightsSummary(env: Env): Promise<InsightsSummary> {
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Single-log "conversation" view -- the raw log detail buries the actual
+// back-and-forth inside a `request_head` JSON string that also contains the
+// full system prompt (the whole knowledge base), making it unreadable for a
+// demo. This extracts just the prior turns + this log's own reply.
+// ---------------------------------------------------------------------------
+
+export interface LogConversationTurn {
+  role: string;
+  content: string;
+}
+
+export interface LogConversation {
+  id: string;
+  created_at: string;
+  success: boolean | null;
+  cost: number | null;
+  /** Prior turns sent as context for this request (system prompt excluded). */
+  messages: LogConversationTurn[];
+  /** The reply this specific request produced, if any (null if blocked/errored). */
+  finalReply: string | null;
+}
+
+export async function fetchLogConversation(env: Env, logId: string): Promise<LogConversation> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai-gateway/gateways/${env.CF_AI_GATEWAY_ID}/logs/${logId}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } });
+  if (!res.ok) {
+    throw new Error(`Gateway log detail request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = (await res.json()) as { result?: Record<string, unknown> };
+  const log = data.result ?? {};
+
+  let messages: LogConversationTurn[] = [];
+  try {
+    const reqBody = JSON.parse(String(log.request_head ?? "{}")) as { messages?: LogConversationTurn[] };
+    messages = reqBody.messages ?? [];
+  } catch {
+    // Truncated/unparseable request_head -- leave empty rather than error out.
+  }
+
+  let finalReply: string | null = null;
+  try {
+    const resBody = JSON.parse(String(log.response_head ?? "{}")) as { content?: string };
+    finalReply = resBody.content ?? null;
+  } catch {
+    // Blocked/errored requests often have no parseable response_head.
+  }
+
+  return {
+    id: String(log.id ?? logId),
+    created_at: String(log.created_at ?? ""),
+    success: typeof log.success === "boolean" ? log.success : null,
+    cost: typeof log.cost === "number" ? log.cost : null,
+    messages,
+    finalReply,
+  };
+}
