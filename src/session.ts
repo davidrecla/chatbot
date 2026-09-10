@@ -13,23 +13,43 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
+import { classifyTier, maxTier, type Tier } from "./modelRouting";
 import type { ChatMessage, Env } from "./types";
 
 const MAX_MESSAGES = 200; // ~100 user/assistant turns
+const DEFAULT_TIER: Tier = "trivial";
 
 export class ChatSession extends DurableObject<Env> {
   async getHistory(): Promise<ChatMessage[]> {
     return (await this.ctx.storage.get<ChatMessage[]>("messages")) ?? [];
   }
 
-  /** Appends a message and returns the (possibly trimmed) full history. */
-  async appendMessage(message: ChatMessage): Promise<{ history: ChatMessage[]; limitReached: boolean }> {
+  async getTier(): Promise<Tier> {
+    return (await this.ctx.storage.get<Tier>("tier")) ?? DEFAULT_TIER;
+  }
+
+  /**
+   * Appends a message and returns the (possibly trimmed) full history, plus
+   * the session's current model tier. Tier is escalate-only: each new user
+   * message is classified (see src/modelRouting.ts) and can only raise the
+   * session's tier, never lower it, so a conversation never drops to a
+   * cheaper/weaker model mid-thread after it's earned a better one.
+   */
+  async appendMessage(message: ChatMessage): Promise<{ history: ChatMessage[]; limitReached: boolean; tier: Tier }> {
     const history = await this.getHistory();
+    const priorLength = history.length;
     history.push(message);
     const limitReached = history.length >= MAX_MESSAGES;
     const trimmed = history.slice(-MAX_MESSAGES);
     await this.ctx.storage.put("messages", trimmed);
-    return { history: trimmed, limitReached };
+
+    let tier = await this.getTier();
+    if (message.role === "user") {
+      tier = maxTier(tier, classifyTier(message.content, priorLength));
+      await this.ctx.storage.put("tier", tier);
+    }
+
+    return { history: trimmed, limitReached, tier };
   }
 
   async reset(): Promise<void> {

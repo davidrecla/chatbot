@@ -45,20 +45,16 @@
   // Non-secret config. Secrets (ANTHROPIC_API_KEY, and later the AI Gateway
   // token) are set with `wrangler secret put` and must never be committed here.
   "vars": {
-    // Phase 2: routed through the AI Gateway's Anthropic-compatible endpoint
-    // instead of api.anthropic.com directly -- same Messages API shape, so
-    // this was the only line src/claude.ts needed to change (plus the
-    // cf-aig-authorization header, gated on CF_AIG_TOKEN being set).
-    "ANTHROPIC_BASE_URL": "https://gateway.ai.cloudflare.com/v1/0feb844d7ff36330cdd00ed24797fe85/pgc-chatbot/anthropic",
-    "ANTHROPIC_MODEL": "claude-sonnet-4-5",
     // Soft backstop for conciseness (primary enforcement is the system
     // prompt's "Keep it short" rule) -- generous enough not to cut off a
     // real multi-item bundle comparison, tight enough to stop runaway essays.
     // (500 was tried and cut a legitimate 6-item bundle breakdown off
     // mid-sentence -- a truncated reply is worse than a slightly longer one.)
     "ANTHROPIC_MAX_TOKENS": "800",
-    // Non-secret Gateway identifiers, used by /api/insights and
-    // /api/demo/resilience (src/gateway.ts) later in Phase 2.
+    // Non-secret Gateway identifiers -- used to build the compat endpoint
+    // URL for every model call (src/gateway.ts's compatUrl, used by
+    // src/claude.ts's multi-model routing, /api/insights, and
+    // /api/demo/resilience).
     "CF_ACCOUNT_ID": "0feb844d7ff36330cdd00ed24797fe85",
     "CF_AI_GATEWAY_ID": "pgc-chatbot"
   },

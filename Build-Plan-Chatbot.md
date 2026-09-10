@@ -138,6 +138,52 @@ steps verified working live against production as of checklist item 27.
   entries existing) were each individually verified via the REST API earlier
   in this checklist (items 17, 21, 25).
 
+## Phase 2.5 — Multi-model tier routing (post-demo enhancement)
+
+Added after the initial Phase 2 pitch, based on a design discussion about
+using Dynamic Routing to split traffic by prompt type. Summary of the
+design decisions (see the actual session for the full reasoning):
+
+- **AI Gateway does not classify content.** It only routes on structured
+  fields (`metadata.*`) via Dynamic Routing's `conditional` node. All
+  classification happens in our own Worker code (`src/modelRouting.ts`),
+  before the request is sent.
+- **Chose code-based routing over Dynamic Routing's dashboard graph**,
+  consistent with the item-22 finding that the `percentage` node was
+  unreliable in this account -- didn't want to build a new production path
+  on an untested dashboard feature.
+- **3 tiers, not 4.** A 4th tier (Qwen3 on Workers AI, for Taglish
+  specifically) was tested against the real system prompt with 5 real
+  Taglish questions and rejected: it inconsistently swung between full
+  English (ignoring the mirror-language rule) and stiff formal Tagalog
+  (not the brand voice's "mostly English + connector words" register).
+  Claude (both tiers) already handles Taglish correctly, so language isn't
+  a routing axis.
+  - `trivial` -> `workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+  - `standard` -> `anthropic/claude-haiku-4-5-20251001` (default)
+  - `complex` -> `anthropic/claude-sonnet-4-5` (bulk/B2B keywords, or a
+    conversation that's already run 6+ messages)
+- **Session-pinned, escalate-only.** A session's tier is stored in the
+  `ChatSession` Durable Object and can only move up, never down --
+  otherwise a trivial-shaped message late in a serious B2B consult (e.g.
+  "ok thanks") would silently downgrade the model mid-conversation right
+  after the expensive model did the hard work. Verified: a 4-turn test
+  conversation escalated trivial -> standard -> complex correctly, and a
+  trivial-shaped 4th message stayed on Sonnet as designed.
+- **Unified on the Gateway's OpenAI-compatible endpoint** (`compat/chat/completions`)
+  for all 3 tiers instead of Anthropic's native endpoint, since Workers AI
+  models aren't reachable via the native Anthropic path. Confirmed
+  streaming works identically (OpenAI-style `choices[0].delta.content`
+  chunks) for both Claude and Workers AI models through the same endpoint.
+  `src/claude.ts` (kept its filename despite no longer being Anthropic-only,
+  to minimize churn) was rewritten around this; `ANTHROPIC_BASE_URL` and
+  `ANTHROPIC_MODEL` were retired (removed from `types.ts`/`wrangler.jsonc`).
+- **UI**: a header bar ("Currently answering with: ...") shows the live
+  model, updated after every reply, plus a small "via <model>" caption
+  under each assistant bubble so tier escalation is visible turn-by-turn
+  during a demo. Both added defensively with `[hidden] { display: none; }`
+  overrides from the start, learning from the /insights modal bug.
+
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
 Real user testing after the first deploy surfaced several behavior/UX

@@ -40,7 +40,7 @@ export interface DemoCallResult {
   text: string;
 }
 
-function compatUrl(env: Env): string {
+export function compatUrl(env: Env): string {
   return `https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.CF_AI_GATEWAY_ID}/compat/chat/completions`;
 }
 

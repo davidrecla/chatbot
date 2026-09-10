@@ -1,18 +1,15 @@
 /**
- * Thin Claude (Anthropic Messages API) client.
- *
- * Deliberately reads its target URL and auth headers from `Env` rather than
- * hardcoding `api.anthropic.com` -- Phase 2 (AI Gateway) is meant to be a
- * config change here, not a rewrite. See Build-Plan-Chatbot.md checklist
- * item 15: putting the Gateway in the loop is just setting
- * ANTHROPIC_BASE_URL to the Gateway's Anthropic-compatible endpoint and
- * adding a `cf-aig-authorization` header -- both handled below already,
- * gated on whether CF_AIG_TOKEN is set.
+ * Model-agnostic streaming chat client, built on the AI Gateway's
+ * OpenAI-compatible endpoint (`compat/chat/completions`). Originally this
+ * file was Anthropic-only (native `/v1/messages`); it's now generalized so
+ * the main chat path can route between multiple tiers/models (see
+ * src/modelRouting.ts) through a single code path -- Claude Sonnet, Claude
+ * Haiku, and a Workers AI model are all addressed the same way, as
+ * `{provider}/{model}` strings on the same endpoint.
  */
 
+import { compatUrl } from "./gateway";
 import type { ChatMessage, Env } from "./types";
-
-const ANTHROPIC_VERSION = "2023-06-01";
 
 export class ClaudeApiError extends Error {
   constructor(
@@ -30,7 +27,7 @@ export interface GatewayRequestOptions {
   /**
    * A stable key so semantically-identical requests (e.g. the same opening
    * FAQ from different visitors) hit the Gateway's cache instead of calling
-   * Anthropic again. Only worth setting for requests where a cached answer
+   * the model again. Only worth setting for requests where a cached answer
    * is genuinely fine to reuse across different people -- see how
    * src/index.ts decides when to pass one.
    */
@@ -39,18 +36,18 @@ export interface GatewayRequestOptions {
   cacheTtlSeconds?: number;
 }
 
-function anthropicHeaders(env: Env, options?: GatewayRequestOptions): HeadersInit {
-  const headers: Record<string, string> = {
-    "content-type": "application/json",
-    "anthropic-version": ANTHROPIC_VERSION,
-    "x-api-key": env.ANTHROPIC_API_KEY,
-  };
+function chatHeaders(env: Env, options?: GatewayRequestOptions): HeadersInit {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  // x-api-key authenticates the Anthropic branch; Authorization (a
+  // Cloudflare API token) is what the Workers AI branch needs when
+  // addressed directly like this. Harmless to send both regardless of
+  // which tier/model a given call is actually using.
+  headers["x-api-key"] = env.ANTHROPIC_API_KEY;
+  if (env.CF_API_TOKEN) headers["Authorization"] = `Bearer ${env.CF_API_TOKEN}`;
+
   // Everything below only makes sense (and is only sent) once the Worker is
   // actually routed through the Gateway, i.e. CF_AIG_TOKEN is set.
   if (!env.CF_AIG_TOKEN) return headers;
-
-  // Authenticates the request to the gateway itself (separate from the
-  // x-api-key above, which authenticates to Anthropic).
   headers["cf-aig-authorization"] = `Bearer ${env.CF_AIG_TOKEN}`;
 
   if (options?.metadata) {
@@ -77,32 +74,32 @@ export interface ClaudeReply {
 }
 
 /**
- * Streams a Claude response as a sequence of plain UTF-8 text chunks (just
+ * Streams a chat response as a sequence of plain UTF-8 text chunks (just
  * the assistant's text deltas, no SSE framing) via a TransformStream applied
- * to Anthropic's own SSE response. The caller (src/index.ts) re-wraps this
- * into whatever wire format the browser expects.
+ * to the compat endpoint's OpenAI-style SSE response. The caller
+ * (src/index.ts) re-wraps this into whatever wire format the browser expects.
  */
-export async function streamClaudeReply(
+export async function streamModelReply(
   env: Env,
+  model: string,
   systemPrompt: string,
   messages: ChatMessage[],
   options?: GatewayRequestOptions,
 ): Promise<ClaudeReply> {
-  const res = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, {
+  const res = await fetch(compatUrl(env), {
     method: "POST",
-    headers: anthropicHeaders(env, options),
+    headers: chatHeaders(env, options),
     body: JSON.stringify({
-      model: env.ANTHROPIC_MODEL,
+      model,
       max_tokens: Number(env.ANTHROPIC_MAX_TOKENS) || 1024,
-      system: systemPrompt,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: [{ role: "system", content: systemPrompt }, ...messages.map((m) => ({ role: m.role, content: m.content }))],
       stream: true,
     }),
   });
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => "");
-    throw new ClaudeApiError(res.status, `Anthropic API error (${res.status}): ${detail.slice(0, 500)}`);
+    throw new ClaudeApiError(res.status, `Model API error (${res.status}): ${detail.slice(0, 500)}`);
   }
 
   return {
@@ -111,10 +108,6 @@ export async function streamClaudeReply(
   };
 }
 
-/**
- * Parses an Anthropic Messages API SSE stream and emits only the text
- * content of `content_block_delta` (`text_delta`) events.
- */
 /**
  * Safety net on top of the system prompt's "never use em/en dashes"
  * instruction, since it's a strong LLM habit that doesn't always fully go
@@ -126,6 +119,10 @@ function stripLongDashes(text: string): string {
   return text.replace(/\s*[\u2013\u2014]\s*/g, ", ");
 }
 
+/**
+ * Parses an OpenAI-style chat completions SSE stream (`choices[0].delta.content`,
+ * terminated by a `data: [DONE]` sentinel) and emits only the text deltas.
+ */
 function sseTextDeltaExtractor(): TransformStream<string, string> {
   let buffer = "";
   return new TransformStream<string, string>({
@@ -137,15 +134,11 @@ function sseTextDeltaExtractor(): TransformStream<string, string> {
         const dataLine = rawEvent.split("\n").find((line) => line.startsWith("data:"));
         if (!dataLine) continue;
         const json = dataLine.slice("data:".length).trim();
-        if (!json) continue;
+        if (!json || json === "[DONE]") continue;
         try {
-          const event = JSON.parse(json) as {
-            type?: string;
-            delta?: { type?: string; text?: string };
-          };
-          if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-            controller.enqueue(stripLongDashes(event.delta.text ?? ""));
-          }
+          const event = JSON.parse(json) as { choices?: { delta?: { content?: string } }[] };
+          const text = event.choices?.[0]?.delta?.content;
+          if (text) controller.enqueue(stripLongDashes(text));
         } catch {
           // Ignore malformed/partial SSE frames -- next chunk will complete them.
         }

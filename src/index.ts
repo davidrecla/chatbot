@@ -1,6 +1,7 @@
-import { ClaudeApiError, streamClaudeReply, type GatewayRequestOptions } from "./claude";
+import { ClaudeApiError, streamModelReply, type GatewayRequestOptions } from "./claude";
 import { fetchInsightsSummary, fetchLogConversation, runAbTestOnce, runOutageDemo } from "./gateway";
 import { buildSystemPrompt } from "./knowledge";
+import { TIER_CONFIG, type Tier } from "./modelRouting";
 import { ChatSession } from "./session";
 import type { ChatMessage, ChatRequestBody, Env, FeedbackRequestBody } from "./types";
 
@@ -80,11 +81,11 @@ async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Pr
   const { sessionId, setCookie } = getOrCreateSessionId(request);
   const stub = env.CHAT_SESSION.get(env.CHAT_SESSION.idFromName(sessionId));
 
-  const { history, limitReached } = await stub.appendMessage({ role: "user", content: message });
+  const { history, limitReached, tier } = await stub.appendMessage({ role: "user", content: message });
 
-  const { stream: textStream, logId } = limitReached
-    ? { stream: staticTextStream(CAP_REACHED_MESSAGE), logId: null }
-    : await claudeReplyStream(env, history, stub, sessionId);
+  const { stream: textStream, logId, model } = limitReached
+    ? { stream: staticTextStream(CAP_REACHED_MESSAGE), logId: null, model: null }
+    : await claudeReplyStream(env, history, stub, sessionId, tier);
 
   const headers = new Headers({
     "content-type": "text/event-stream; charset=utf-8",
@@ -94,7 +95,7 @@ async function handleChat(request: Request, env: Env, ctx: ExecutionContext): Pr
   if (setCookie) headers.set("set-cookie", setCookie);
 
   const encoder = new TextEncoder();
-  const metaFrame = encoder.encode(`event: meta\ndata: ${JSON.stringify({ logId })}\n\n`);
+  const metaFrame = encoder.encode(`event: meta\ndata: ${JSON.stringify({ logId, model })}\n\n`);
   return new Response(prependBytes(textStream.pipeThrough(sseEncoder()), metaFrame), { headers });
 }
 
@@ -168,19 +169,27 @@ async function handleLogConversation(url: URL, env: Env): Promise<Response> {
 interface ClaudeReplyResult {
   stream: ReadableStream<string>;
   logId: string | null;
+  model: string | null;
 }
 
-/** Streams Claude's reply and, once fully streamed, saves it as the session's assistant turn. */
+/**
+ * Streams the reply from this session's current tier's model and, once
+ * fully streamed, saves it as the session's assistant turn. See
+ * src/modelRouting.ts for the tier -> model mapping and how a session's
+ * tier escalates (never downgrades).
+ */
 async function claudeReplyStream(
   env: Env,
   history: ChatMessage[],
   stub: DurableObjectStub<ChatSession>,
   sessionId: string,
+  tier: Tier,
 ): Promise<ClaudeReplyResult> {
+  const tierConfig = TIER_CONFIG[tier];
   let reply: { stream: ReadableStream<string>; logId: string | null };
   try {
-    reply = await streamClaudeReply(env, buildSystemPrompt(), history, {
-      metadata: { session_id: sessionId, surface: "public-chat" },
+    reply = await streamModelReply(env, tierConfig.model, buildSystemPrompt(), history, {
+      metadata: { session_id: sessionId, surface: "public-chat", tier },
       ...openingQuestionCacheOptions(history),
     });
   } catch (err) {
@@ -193,7 +202,7 @@ async function claudeReplyStream(
     const message = blocked
       ? "I can't help with that one. Happy to talk coffee, pricing, or brewing though, what can I get you?"
       : "Sorry, I'm having trouble getting a response right now. Please try again in a moment.";
-    return { stream: staticTextStream(message), logId: null };
+    return { stream: staticTextStream(message), logId: null, model: null };
   }
 
   let full = "";
@@ -208,7 +217,7 @@ async function claudeReplyStream(
       },
     }),
   );
-  return { stream, logId: reply.logId };
+  return { stream, logId: reply.logId, model: tierConfig.label };
 }
 
 /** Prepends a raw byte chunk (e.g. an SSE frame) before the rest of a byte stream. */

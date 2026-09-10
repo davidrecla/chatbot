@@ -15,8 +15,10 @@ export interface Env {
   AI: Ai;
 
   // --- Non-secret vars (wrangler.jsonc `vars`) ---
-  ANTHROPIC_BASE_URL: string;
-  ANTHROPIC_MODEL: string;
+  // ANTHROPIC_BASE_URL/ANTHROPIC_MODEL were retired when the chat path moved
+  // to multi-model tier routing (src/modelRouting.ts) -- the model is now
+  // chosen per-request and every call goes through the Gateway's compat
+  // endpoint (src/gateway.ts's compatUrl), not a fixed Anthropic-only URL.
   ANTHROPIC_MAX_TOKENS: string;
 
   // --- Secrets (`wrangler secret put ...`) ---

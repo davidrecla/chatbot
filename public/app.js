@@ -2,6 +2,8 @@ const messagesEl = document.getElementById("messages");
 const formEl = document.getElementById("composer");
 const inputEl = document.getElementById("input");
 const sendButtonEl = document.getElementById("send-button");
+const modelIndicatorBarEl = document.getElementById("model-indicator-bar");
+const modelIndicatorEl = document.getElementById("model-indicator");
 
 // Real chat pacing: a pause where nothing shows (like reading the message),
 // then a "typing..." pause scaled to how long the reply is, then the whole
@@ -143,19 +145,38 @@ function addFeedbackControls(bubble, logId) {
   col.appendChild(wrap);
 }
 
+/** Shows/updates the header's "currently using: <model>" indicator (demo visibility into the model-tier routing). */
+function updateModelIndicator(model) {
+  if (!model) return;
+  modelIndicatorEl.textContent = `Currently answering with: ${model}`;
+  modelIndicatorBarEl.hidden = false;
+}
+
+/** A small "via <model>" caption under a reply, so escalation across a conversation is visible turn by turn. */
+function addModelTag(bubble, model) {
+  if (!model) return;
+  const col = bubble.parentElement;
+  if (!col) return;
+  const tag = document.createElement("p");
+  tag.className = "msg-model-tag";
+  tag.textContent = `via ${model}`;
+  col.appendChild(tag);
+}
+
 function autoGrow() {
   inputEl.style.height = "auto";
   inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
 }
 inputEl.addEventListener("input", autoGrow);
 
-/** Reads the full SSE stream from `res`, returning the reply text and the Gateway log id (if any). */
+/** Reads the full SSE stream from `res`, returning the reply text, the Gateway log id, and which model answered. */
 async function collectFullText(res) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let sseBuffer = "";
   let full = "";
   let logId = null;
+  let model = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -173,13 +194,15 @@ async function collectFullText(res) {
       if (!json) continue;
 
       if (eventName === "meta") {
-        logId = JSON.parse(json).logId ?? null;
+        const meta = JSON.parse(json);
+        logId = meta.logId ?? null;
+        model = meta.model ?? null;
       } else if (eventName !== "done") {
         full += JSON.parse(json);
       }
     }
   }
-  return { full, logId };
+  return { full, logId, model };
 }
 
 async function sendMessage(message) {
@@ -206,7 +229,7 @@ async function sendMessage(message) {
       throw new Error(data.error || `Request failed (${res.status})`);
     }
 
-    const { full, logId } = await collectFullText(res);
+    const { full, logId, model } = await collectFullText(res);
 
     // Keep the typing indicator up for a duration scaled to the reply's
     // length, even if the network already finished faster than that.
@@ -220,6 +243,8 @@ async function sendMessage(message) {
     } else {
       bubble.innerHTML = renderMarkdownLite(full);
       if (logId) addFeedbackControls(bubble, logId);
+      addModelTag(bubble, model);
+      updateModelIndicator(model);
     }
     messagesEl.scrollTop = messagesEl.scrollHeight;
   } catch (err) {
