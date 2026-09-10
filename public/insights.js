@@ -11,6 +11,13 @@ function formatMoney(n) {
   return `$${n.toFixed(4)}`;
 }
 
+// Always show Philippine time (Asia/Manila, UTC+8) regardless of the
+// viewer's own device/browser timezone, since that's where the business
+// (and whoever's checking this panel) operates.
+function formatPhTime(isoString) {
+  return new Date(isoString).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 function formatPct(n) {
   return `${(n * 100).toFixed(0)}%`;
 }
@@ -69,14 +76,14 @@ function renderSummary(summary) {
   const table = document.createElement("table");
   table.innerHTML = `
     <thead>
-      <tr><th>Time</th><th>Provider</th><th>Model</th><th>Cost</th><th>Cached</th><th>Feedback</th></tr>
+      <tr><th>Time (PH)</th><th>Provider</th><th>Model</th><th>Cost</th><th>Cached</th><th>Feedback</th></tr>
     </thead>
     <tbody>
       ${summary.recentLogs
         .map(
           (l) => `
         <tr>
-          <td>${new Date(l.created_at).toLocaleTimeString()}</td>
+          <td>${formatPhTime(l.created_at)}</td>
           <td>${l.provider ?? "-"}</td>
           <td title="${l.model ?? ""}">${l.model ?? "-"}</td>
           <td>${l.cost != null ? formatMoney(l.cost) : "-"}</td>
