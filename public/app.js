@@ -2,7 +2,6 @@ const messagesEl = document.getElementById("messages");
 const formEl = document.getElementById("composer");
 const inputEl = document.getElementById("input");
 const sendButtonEl = document.getElementById("send-button");
-const modelIndicatorBarEl = document.getElementById("model-indicator-bar");
 const modelIndicatorEl = document.getElementById("model-indicator");
 
 // Real chat pacing: a pause where nothing shows (like reading the message),
@@ -145,11 +144,11 @@ function addFeedbackControls(bubble, logId) {
   col.appendChild(wrap);
 }
 
-/** Shows/updates the header's "currently using: <model>" indicator (demo visibility into the model-tier routing). */
+/** Shows/updates the footer's "currently answering with: <model>" indicator (demo visibility into the model-tier routing). */
 function updateModelIndicator(model) {
   if (!model) return;
   modelIndicatorEl.textContent = `Currently answering with: ${model}`;
-  modelIndicatorBarEl.hidden = false;
+  modelIndicatorEl.hidden = false;
 }
 
 /** A small "via <model>" caption under a reply, so escalation across a conversation is visible turn by turn. */
