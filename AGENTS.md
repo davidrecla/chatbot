@@ -42,12 +42,16 @@ API access). Deployed secrets are set separately with `wrangler secret put`.
   OpenAI-compatible endpoint (`compat/chat/completions`). Despite the
   filename (kept to minimize churn), it's not Anthropic-only -- it's what
   every tier in `src/modelRouting.ts` calls through.
-- `src/modelRouting.ts` -- **which model answers a given message.** Quick
-  reference: first message, <60 chars, no bulk/business terms -> Llama 3.3
-  (Workers AI); mentions `kg`/`bulk`/`wholesale`/`cafe`/`business`/`bundle`/`office`
-  or the conversation already has 6+ messages -> Claude Sonnet; otherwise ->
-  Claude Haiku (default). A session's tier only ever escalates, never drops,
-  for the rest of that conversation.
+- `src/modelRouting.ts` -- **which model answers a given message.** 4 tiers,
+  in escalating order (`trivial -> technical -> standard -> complex`; a
+  session's tier only ever moves right, never back):
+  - `trivial` -> Llama 4 Scout (Workers AI): basic questions, <4 messages in.
+  - `technical` -> GPT-OSS 120B (Workers AI): message asks *how/why*
+    something works (`explain`, `extraction`, `ratio`, `grind`, etc.).
+  - `standard` -> Claude Haiku (default): conversation's gone deeper (4+
+    messages) without a technical or B2B signal.
+  - `complex` -> Claude Sonnet: 12+ messages, or a bulk/B2B signal
+    (`kg`, `bulk`, `wholesale`, `business`, `bundle`, `office`, `cafe`).
 - `src/session.ts` -- `ChatSession` Durable Object (RPC-style): per-visitor
   message history + the session's current model tier (escalate-only, see
   above). Also a generous message-count cap as a storage-growth backstop.

@@ -140,19 +140,21 @@ steps verified working live against production as of checklist item 27.
 
 ## Phase 2.5 — Multi-model tier routing (post-demo enhancement)
 
-**Model selection rule (quick reference):**
+**Model selection rule (quick reference, current/final version):**
 
-| Condition | Model used |
-|---|---|
-| First message of the session, under 60 characters, no bulk/business terms | Llama 3.3 (Workers AI) |
-| Message (or history) mentions `kg`/`bulk`/`wholesale`/`cafe`/`business`/`bundle`/`office`, **or** the conversation already has 6+ messages | Claude Sonnet |
-| Anything else (the default) | Claude Haiku |
+| Tier | Condition | Model |
+|---|---|---|
+| Trivial | Basic questions about coffee, the company, or products -- early in the conversation (under 4 messages exchanged) | Llama 4 Scout (Workers AI) |
+| Technical | Message asks *how/why* something works -- matches `explain`, `how does`, `why`, `extraction`, `ratio`, `grind`, `brew time`, `roast level`, `acidity`, `process`, `fermentation`, etc. | GPT-OSS 120B (Workers AI) |
+| Standard | Conversation has gone deeper (4+ messages exchanged), without technical or B2B signals | Claude Haiku |
+| Complex | 12+ messages, **or** a genuine B2B/bulk signal (`kg`, `bulk`, `wholesale`, `business`, `bundle`, `office`, `cafe`) | Claude Sonnet |
 
-Once a session reaches a higher tier it **never drops back down** for the rest of that conversation, even if a later message looks trivial in isolation. Logic lives in `src/modelRouting.ts` (`classifyTier`); the tier itself is stored per-session in the `ChatSession` Durable Object.
+Order is `trivial -> technical -> standard -> complex`, and **escalation is purely positional in that list, not "how serious is this."** A technical conversation that just keeps going without another technical question still gets promoted to `standard` on length alone once it crosses 4 messages, since `standard` sits above `technical` in the ladder -- confirmed as the intended behavior, not a bug, when this was raised during design. Once a session reaches a higher tier it **never drops back down** for the rest of that conversation, even if a later message looks trivial in isolation. Logic lives in `src/modelRouting.ts` (`classifyTier`); the tier itself is stored per-session in the `ChatSession` Durable Object.
 
 Added after the initial Phase 2 pitch, based on a design discussion about
 using Dynamic Routing to split traffic by prompt type. Summary of the
-design decisions (see the actual session for the full reasoning):
+design decisions and iteration (see the actual session for the full
+reasoning):
 
 - **AI Gateway does not classify content.** It only routes on structured
   fields (`metadata.*`) via Dynamic Routing's `conditional` node. All
@@ -162,26 +164,36 @@ design decisions (see the actual session for the full reasoning):
   consistent with the item-22 finding that the `percentage` node was
   unreliable in this account -- didn't want to build a new production path
   on an untested dashboard feature.
-- **3 tiers, not 4.** A 4th tier (Qwen3 on Workers AI, for Taglish
-  specifically) was tested against the real system prompt with 5 real
-  Taglish questions and rejected: it inconsistently swung between full
-  English (ignoring the mirror-language rule) and stiff formal Tagalog
-  (not the brand voice's "mostly English + connector words" register).
-  Claude (both tiers) already handles Taglish correctly, so language isn't
-  a routing axis.
-  - `trivial` -> `workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast`
-  - `standard` -> `anthropic/claude-haiku-4-5-20251001` (default)
-  - `complex` -> `anthropic/claude-sonnet-4-5` (bulk/B2B keywords, or a
-    conversation that's already run 6+ messages)
+- **A "Taglish -> different model" tier was explored and rejected.**
+  Qwen3 (Workers AI) was tested against the real system prompt with 5 real
+  Taglish questions and inconsistently swung between full English (ignoring
+  the mirror-language rule) and stiff formal Tagalog (not the brand voice's
+  "mostly English + connector words" register). Claude already handles
+  Taglish correctly and consistently, so language isn't a routing axis.
+- **Started with 3 tiers (trivial/standard/complex) on
+  `llama-3.3-70b-instruct-fp8-fast`, then upgraded and expanded to 4.**
+  Benchmarked `llama-3.3-70b-instruct-fp8-fast` against
+  `llama-4-scout-17b-16e-instruct` on real, KB-grounded questions: Scout was
+  30-90% faster and matched or beat 3.3 on accuracy (caught an out-of-stock
+  detail 3.3 missed; was more proactively helpful on a bundle-pricing
+  question) -- switched the trivial tier to Scout. Then benchmarked
+  `gpt-oss-120b`, `deepseek-v4-flash-0731`, and `deepseek-r1-distill-qwen-32b`
+  for a new "technical" tier: the DeepSeek flash model returned an empty
+  response on a technical question (reliability concern, and the *second*
+  Workers AI model this session to show that failure mode -- gpt-oss-**20b**
+  did the same earlier), and the R1-distill model took 107 seconds and
+  leaked raw `<think>` reasoning into the reply -- both disqualified.
+  `gpt-oss-120b` was fast and accurate, so it became the technical tier.
 - **Session-pinned, escalate-only.** A session's tier is stored in the
   `ChatSession` Durable Object and can only move up, never down --
   otherwise a trivial-shaped message late in a serious B2B consult (e.g.
   "ok thanks") would silently downgrade the model mid-conversation right
-  after the expensive model did the hard work. Verified: a 4-turn test
-  conversation escalated trivial -> standard -> complex correctly, and a
-  trivial-shaped 4th message stayed on Sonnet as designed.
+  after the expensive model did the hard work. Verified end-to-end for all
+  4 tiers: trivial -> technical (keyword match) -> standard (promoted by
+  conversation depth alone) -> complex (bulk signal), and a trivial-shaped
+  message sent afterward correctly stayed on Sonnet.
 - **Unified on the Gateway's OpenAI-compatible endpoint** (`compat/chat/completions`)
-  for all 3 tiers instead of Anthropic's native endpoint, since Workers AI
+  for all 4 tiers instead of Anthropic's native endpoint, since Workers AI
   models aren't reachable via the native Anthropic path. Confirmed
   streaming works identically (OpenAI-style `choices[0].delta.content`
   chunks) for both Claude and Workers AI models through the same endpoint.
@@ -196,6 +208,11 @@ design decisions (see the actual session for the full reasoning):
   "Visit us at" line, for a subtler/more aesthetic fit.) Added defensively
   with a `[hidden] { display: none; }` override from the start, learning
   from the /insights modal bug.
+- **Grok/xAI is not a Workers AI model** -- it's reached through AI
+  Gateway's separate Unified Billing catalog (`xai/grok-*`, pass-through to
+  xAI's own API), not hosted on Cloudflare's own infrastructure like true
+  `@cf/...` Workers AI models. Worth knowing if asked "why not add Grok as
+  a Workers AI tier" -- it doesn't fit the same category as the others.
 
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
