@@ -176,6 +176,16 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* The row-relative width cap belongs here, on the container -- not on
+     .msg below, which should always fill 100% of whatever this allows.
+     Root cause of a real bug: .msg previously had its own max-width
+     override in the mobile media query (88%), applied *inside* this
+     already content-sized parent -- capping an inner box at 88% of an
+     outer box that's already sized to exactly fit that inner box's
+     content just shrinks it below its own text's width. Harmless for
+     long messages (they wrap at a word boundary anyway and it's
+     invisible), but very visible for short ones (e.g. "Hey" rendering as
+     "He" / "y") since there's no slack to absorb the compounding cap. */
   max-width: 82%;
 }
 
@@ -184,14 +194,6 @@ a:hover {
 }
 
 .msg {
-  /* display: inline-block (rather than a flex-item width trick like
-     fit-content, which turned out unreliable here) is a much older, far
-     more consistently-implemented way to make a box shrink-to-fit its own
-     content across browsers/engines -- fixes short messages (e.g. "Hi")
-     occasionally wrapping character-by-character on real mobile devices,
-     while longer messages that already wrap at normal word boundaries
-     were never visibly affected either way. */
-  display: inline-block;
   max-width: 100%;
   padding: 11px 15px;
   border-radius: var(--radius);
@@ -390,7 +392,7 @@ a:hover {
     font-size: 1.35rem;
   }
 
-  .msg {
+  .msg-col {
     max-width: 88%;
   }
 
