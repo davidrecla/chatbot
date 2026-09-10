@@ -1,6 +1,6 @@
 # Pure Grounds Coffee Co. — Claude Chatbot on Cloudflare Workers (Phase 1) + AI Gateway Showcase (Phase 2)
 
-Build a brand-styled Claude-powered chatbot at chatbot.puregroundscoffee.com on Cloudflare Workers with a static knowledge base distilled from the live site, architected so Phase 2 can drop in Cloudflare AI Gateway as a transparent proxy and showcase (nearly) every requested Gateway feature with minimal code churn — tracked via a checklist so any session can pick up where the last one left off.
+Build a brand-styled Claude-powered chatbot at chat.puregroundscoffee.com on Cloudflare Workers with a static knowledge base distilled from the live site, architected so Phase 2 can drop in Cloudflare AI Gateway as a transparent proxy and showcase (nearly) every requested Gateway feature with minimal code churn — tracked via a checklist so any session can pick up where the last one left off.
 
 ## How to resume this build in a later session
 
@@ -49,8 +49,8 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [x] 8. Implement `src/index.ts` (routing: static assets, `/api/chat` SSE streaming handler, interim per-session rate/length caps). `npm run typecheck` passes.
 - [x] 9. Build static UI: `public/index.html`, `public/style.css`, `public/app.js` (Montserrat + gold/brown/cream palette, logo pulled from the site's own CDN into `public/assets/logo.png`, full-page chat, footer disclaimer/link to main site).
 - [x] 10. Configure `wrangler.jsonc` (assets binding, Durable Object binding+migration, vars/secret placeholders for `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`).
-- [x] 11. `wrangler secret put ANTHROPIC_API_KEY`; `wrangler deploy`; attach Workers Custom Domain `chatbot.puregroundscoffee.com`. Live: routes/custom_domain added to `wrangler.jsonc`; deploy auto-disabled `workers_dev` since an explicit route exists (single clean URL, no `*.workers.dev` duplicate).
-- [x] 12. Manually verify Phase 1 end-to-end — **gate before Phase 2**. Verified locally (`wrangler dev`) and in production (`https://chatbot.puregroundscoffee.com`): grounded product/company answers, multi-turn memory, off-topic redirect all work. Found + fixed a real bug: session cookie was unconditionally `Secure`, which silently broke multi-turn memory over local plain-HTTP `wrangler dev` (browsers/HTTP clients correctly refuse `Secure` cookies over non-HTTPS) -- now conditional on request protocol.
+- [x] 11. `wrangler secret put ANTHROPIC_API_KEY`; `wrangler deploy`; attach Workers Custom Domain `chat.puregroundscoffee.com`. Live: routes/custom_domain added to `wrangler.jsonc`; deploy auto-disabled `workers_dev` since an explicit route exists (single clean URL, no `*.workers.dev` duplicate).
+- [x] 12. Manually verify Phase 1 end-to-end — **gate before Phase 2**. Verified locally (`wrangler dev`) and in production (`https://chat.puregroundscoffee.com`): grounded product/company answers, multi-turn memory, off-topic redirect all work. Found + fixed a real bug: session cookie was unconditionally `Secure`, which silently broke multi-turn memory over local plain-HTTP `wrangler dev` (browsers/HTTP clients correctly refuse `Secure` cookies over non-HTTPS) -- now conditional on request protocol.
 - [x] 13. Commit Phase 1 work with clear messages (push only when asked). Committed (`9c9c4f5`); not pushed yet -- push when you're ready.
 
 ### Phase 2 — AI Gateway proxy + feature showcase
@@ -74,7 +74,7 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [x] 23. Implement `src/gateway.ts` + `POST /api/demo/resilience` (OpenAI-compat endpoint) — isolated demo path (not part of the main chat), `{"mode": "outage" | "ab-test"}`. Outage mode calls `dynamic/pgc-resilience-outage-demo`. A/B mode randomly picks between `anthropic/claude-haiku-4-5-20251001` and `workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, calling each directly via `{provider}/{model}` addressing on the compat endpoint (see item 22 note). Needed a new `CF_API_TOKEN` secret (reused the same capable Cloudflare API token) since direct Workers AI addressing through the compat endpoint needs an `Authorization` header, unlike Dynamic Routes/`env.AI`. Added a random nonce to the demo prompt so repeated calls don't just replay the Gateway's exact-match cache and fake the split. Verified: outage mode always shows `provider: workers-ai`; A/B mode genuinely alternates between both models across repeated calls.
   - **Retired (Phase 2.5)**: the "outage" mode, its `pgc-resilience-outage-demo` Dynamic Route, and the "Simulate provider outage" button were removed at the user's request, no longer used. `handleResilienceDemo` now only runs the A/B mode; `runOutageDemo`/`OUTAGE_DEMO_ROUTE` were deleted from `src/gateway.ts`. `pgc-tier-router` (Phase 2.5) is a more compelling Dynamic Route to showcase now anyway -- it's live-routing real production chat traffic, not a one-off demo call.
 - [x] 24. Build `/insights` admin panel (`public/insights.html`, `insights.css`, `insights.js`): requests, cache-hit rate, spend, latency, feedback ratio, model/provider split, recent activity table, Resilience Lab controls (outage/A-B buttons calling `/api/demo/resilience`); pulls from `src/gateway.ts`'s `fetchInsightsSummary` (aggregates the last 50 log entries via the REST API -- `per_page` maxes at 50, not 100). Extensionless `/insights` resolves to `insights.html` automatically (Workers assets' default html handling).
-- [x] 25. Set up Cloudflare Access application protecting `/insights`; verify unauthenticated access is blocked. Created via API: self-hosted app covering `chatbot.puregroundscoffee.com/insights`, `/api/insights`, and `/api/demo` (so the panel's backing endpoints are gated too, not just the page). Policy allows email domains: `puregroundscoffee.com`, `cloudflare.com`, `metrobank.com.ph`, `nexustech.com.ph`. Verified: unauthenticated requests to all three paths get a `302` to the Cloudflare Access login page.
+- [x] 25. Set up Cloudflare Access application protecting `/insights`; verify unauthenticated access is blocked. Created via API: self-hosted app covering `chat.puregroundscoffee.com/insights`, `/api/insights`, and `/api/demo` (so the panel's backing endpoints are gated too, not just the page). Policy allows email domains: `puregroundscoffee.com`, `cloudflare.com`, `metrobank.com.ph`, `nexustech.com.ph`. Verified: unauthenticated requests to all three paths get a `302` to the Cloudflare Access login page.
 - [x] 26. Confirm/log Logpush and Unified Billing/ZDR as optional talking points (dashboard-only, not required to wire up). Confirmed current gateway state: `logpush: false` (not enabled -- pitch as "available on a paid plan, exports logs to R2/S3/SIEM, flip a toggle when you want it"), `zdr: false` (pitch as "available for Unified Billing traffic if PII-adjacent use cases need it"), `wholesale: true`, `workers_ai_billing_mode: "postpaid"`. Not wiring these up now, per plan -- see "Demo script" below for exact talking points to use live.
 - [x] 27. Dry-run the manager-facing demo script end-to-end; commit Phase 2 work. See "Demo script for managers" section below -- ran through it live against production, all steps confirmed working (chat, Taglish, business bundles, feedback, caching cost drop, outage fallback, A/B split, Access-gated Insights panel).
 
@@ -83,7 +83,7 @@ same flag to any other ad-hoc Node network scripts on this machine.
 A ~10-minute walkthrough for showing this to non-technical managers. All
 steps verified working live against production as of checklist item 27.
 
-1. **Open the chatbot** (`https://chatbot.puregroundscoffee.com`) cold.
+1. **Open the chatbot** (`https://chat.puregroundscoffee.com`) cold.
    Ask something normal ("what's your best seller?"). Point out: real
    Claude answer, grounded in the actual catalog, on-brand tone, no
    "contact us"/AI-assistant hedging -- it just answers like staff would.
@@ -107,7 +107,7 @@ steps verified working live against production as of checklist item 27.
    safety, currently flagging), DLP (PII/financial detection, currently
    flagging), Spend Limits ($0.50/day/session + $10/day account-wide),
    Rate Limiting (30 req/min), and Authenticated Gateway (on).
-7. **Open `/insights`** (`https://chatbot.puregroundscoffee.com/insights`).
+7. **Open `/insights`** (`https://chat.puregroundscoffee.com/insights`).
    Log in with an approved email (puregroundscoffee.com or the other
    allowed domains) -- point out this page itself is Access-gated, so only
    approved staff ever see it.
@@ -226,6 +226,18 @@ reasoning):
   `@cf/...` Workers AI models. Worth knowing if asked "why not add Grok as
   a Workers AI tier" -- it doesn't fit the same category as the others.
 
+**Custom Domain renamed**: `chatbot.puregroundscoffee.com` -> `chat.puregroundscoffee.com`
+(`wrangler.jsonc`'s route pattern). `wrangler deploy` cleanly replaced the
+old Custom Domain with the new one on the same Worker -- verified via the
+Workers domains API that only `chat.puregroundscoffee.com` remains, no
+dangling old record. The Cloudflare Access application ("pgc-chatbot
+Gateway Insights") had the old domain hardcoded in its `domain`/
+`self_hosted_domains`/`destinations` fields -- updated those to the new
+domain via the API (its policy, allowed email domains, was preserved
+unchanged). Verified end-to-end on the new domain: chat homepage 200,
+`/api/chat` 200, `/insights` still redirects unauthenticated requests to
+the Access login (302).
+
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
 Real user testing after the first deploy surfaced several behavior/UX
@@ -275,7 +287,7 @@ tweaks -- keep them in mind if you touch tone, pacing, or the chat UI:
   - Store ships an `agents.md` + Shopify UCP/MCP commerce endpoints, but that's written for *third-party* shopping agents (installing Shop.app, etc.), not our own chatbot. Per user direction (see below), we deliberately do NOT inject it into the system prompt or lean on "redirect to a human/email" -- the bot acts as the sales consultant itself and links directly to product/bundle pages instead.
 - **Brand palette/fonts** extracted from live theme CSS variables (`--color-*`, `--font-*`): Montserrat (headings + body); warm gold/bronze accent `#B68637`, deep coffee brown `#49281A`, cream/oat neutral `#E2DED7`, near-black text `#121212`/`#171717`, white. Double-check exact hex/scheme usage against computed styles during implementation.
 - **Anthropic access**: user has a real Anthropic Console API key (separate from any claude.ai chat plan).
-- **DNS**: `puregroundscoffee.com` is on Cloudflare nameservers under an account the user controls — Workers Custom Domain for `chatbot.puregroundscoffee.com` is viable.
+- **DNS**: `puregroundscoffee.com` is on Cloudflare nameservers under an account the user controls — Workers Custom Domain for `chat.puregroundscoffee.com` is viable.
 - **AI Gateway facts** (confirmed via current docs):
   - Provider-specific endpoint `https://gateway.ai.cloudflare.com/v1/{account}/{gateway}/anthropic/v1/messages` is a pass-through of the Anthropic Messages API — the "just change the base URL" story for Phase 2.
   - Basic **request retries** work on that same endpoint via `cf-aig-max-attempts`/`cf-aig-retry-delay`/`cf-aig-backoff` headers.
@@ -313,7 +325,7 @@ chatbot/
 ### Phase 1 design notes
 - System prompt = brand-voice guide + site knowledge + explicit guardrails: stay on Pure Grounds Coffee Co. topics; never invent prices/stock; redirect to `puregroundscoffee.com` / `hello@puregroundscoffee.com` for things not in the knowledge base; refuse to attempt checkout itself.
 - Chat flow: session cookie → Durable Object stores running message list → `POST /api/chat` streams Claude's SSE response back to the browser.
-- UI: full-page brand-styled chat (not an embedded widget) at bare `chatbot.puregroundscoffee.com`.
+- UI: full-page brand-styled chat (not an embedded widget) at bare `chat.puregroundscoffee.com`.
 - Interim cost/abuse safety (pre-Gateway): cap `max_tokens`, cap input length, soft per-session message-count ceiling — explicitly temporary, retired once Gateway rate limiting is on (checklist item 18).
 
 ### Phase 2 design notes — feature-by-feature mapping
@@ -337,7 +349,7 @@ chatbot/
 - [ ] `npm run build:knowledge` produces a sane, human-reviewable `site-knowledge.md`.
 - [ ] `wrangler dev` locally: multi-turn conversation stays in character, cites only knowledge-doc facts, refuses to fabricate prices/stock, redirects off-topic/purchase requests appropriately.
 - [ ] `tsc --noEmit` / lint passes.
-- [ ] `wrangler deploy` succeeds; `chatbot.puregroundscoffee.com` resolves and serves the chat UI over HTTPS via the Custom Domain.
+- [ ] `wrangler deploy` succeeds; `chat.puregroundscoffee.com` resolves and serves the chat UI over HTTPS via the Custom Domain.
 - [ ] Mobile + desktop visual check against brand palette/fonts.
 - [ ] Phase 2: requests visibly flow through the AI Gateway dashboard (logs, cache hits on repeated FAQ, forced-failure resilience demo showing `cf-aig-step` fallback, thumbs feedback appearing on a log entry, `/insights` inaccessible without Access login).
 

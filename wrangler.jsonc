@@ -61,9 +61,12 @@
 
   // Custom Domain: puregroundscoffee.com's zone is on this same Cloudflare
   // account, so `wrangler deploy` creates the DNS record + TLS cert for us.
+  // (Was chatbot.puregroundscoffee.com -- renamed to chat.puregroundscoffee.com.
+  // The old custom domain/DNS record needs removing separately; wrangler
+  // only adds/updates the one in this file, it doesn't clean up a renamed one.)
   "routes": [
     {
-      "pattern": "chatbot.puregroundscoffee.com",
+      "pattern": "chat.puregroundscoffee.com",
       "custom_domain": true
     }
   ]
