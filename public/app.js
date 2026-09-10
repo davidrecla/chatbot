@@ -3,12 +3,99 @@ const formEl = document.getElementById("composer");
 const inputEl = document.getElementById("input");
 const sendButtonEl = document.getElementById("send-button");
 
-/** Renders a new message bubble and returns its content element (for streaming updates). */
-function appendMessage(role, text, { pending = false, error = false } = {}) {
+// Real chat pacing: a pause where nothing shows (like reading the message),
+// then a "typing..." pause scaled to how long the reply is, then the whole
+// message lands at once, the way people actually message each other rather
+// than a token-by-token drip.
+const SEEN_DELAY_MIN_MS = 1200;
+const SEEN_DELAY_MAX_MS = 2200;
+const TYPING_BASE_MS = 800;
+const TYPING_PER_CHAR_MS = 8;
+const TYPING_MIN_MS = 1200;
+const TYPING_MAX_MS = 4000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function typingDurationFor(text) {
+  const raw = TYPING_BASE_MS + text.length * TYPING_PER_CHAR_MS;
+  return Math.min(Math.max(raw, TYPING_MIN_MS), TYPING_MAX_MS);
+}
+
+// --- Minimal, safe markdown -> HTML for chat bubbles: **bold** and links. ---
+
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
+}
+
+function renderMarkdownLite(text) {
+  const placeholders = [];
+  const stash = (html) => {
+    const token = `\u0000${placeholders.length}\u0000`;
+    placeholders.push(html);
+    return token;
+  };
+
+  let html = escapeHtml(text);
+
+  // [label](url) markdown links first, then any remaining bare URLs.
+  html = html.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_, label, url) => stash(`<a href="${url}" target="_blank" rel="noopener">${label}</a>`),
+  );
+  html = html.replace(/https?:\/\/[^\s<]+/g, (url) => stash(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`));
+
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+  return html.replace(/\u0000(\d+)\u0000/g, (_, i) => placeholders[Number(i)]);
+}
+
+function appendMessage(role, text) {
+  const row = document.createElement("div");
+  row.className = `msg-row msg-row--${role}`;
+
+  if (role === "assistant") {
+    const avatar = document.createElement("img");
+    avatar.className = "msg-avatar";
+    avatar.src = "/assets/logo.png";
+    avatar.alt = "";
+    row.appendChild(avatar);
+  }
+
   const bubble = document.createElement("div");
-  bubble.className = `msg msg--${role}${pending ? " msg--pending" : ""}${error ? " msg--error" : ""}`;
+  bubble.className = `msg msg--${role}`;
   bubble.textContent = text;
-  messagesEl.appendChild(bubble);
+  row.appendChild(bubble);
+
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return bubble;
+}
+
+/** Creates an empty assistant bubble showing an animated "typing..." indicator. */
+function appendTypingBubble() {
+  const row = document.createElement("div");
+  row.className = "msg-row msg-row--assistant";
+
+  const avatar = document.createElement("img");
+  avatar.className = "msg-avatar";
+  avatar.src = "/assets/logo.png";
+  avatar.alt = "";
+  row.appendChild(avatar);
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg msg--assistant msg--pending";
+  bubble.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+  row.appendChild(bubble);
+
+  messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return bubble;
 }
@@ -19,55 +106,75 @@ function autoGrow() {
 }
 inputEl.addEventListener("input", autoGrow);
 
+/** Reads the full SSE stream from `res` and returns the complete reply text. */
+async function collectFullText(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+
+    const events = sseBuffer.split("\n\n");
+    sseBuffer = events.pop() ?? "";
+    for (const raw of events) {
+      const isDoneEvent = raw.startsWith("event: done");
+      const dataLine = raw.split("\n").find((line) => line.startsWith("data:"));
+      if (!dataLine) continue;
+      const json = dataLine.slice("data:".length).trim();
+      if (!json || isDoneEvent) continue;
+      full += JSON.parse(json);
+    }
+  }
+  return full;
+}
+
 async function sendMessage(message) {
   sendButtonEl.disabled = true;
-  const assistantBubble = appendMessage("assistant", "", { pending: true });
+
+  // Fire the request immediately so network latency overlaps with the
+  // "seen" delay below, instead of adding on top of it.
+  const fetchPromise = fetch("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+
+  // Brief pause with no indicator at all, like someone reading your message
+  // before they start typing back.
+  await sleep(randomBetween(SEEN_DELAY_MIN_MS, SEEN_DELAY_MAX_MS));
+  const bubble = appendTypingBubble();
+  const typingStartedAt = Date.now();
 
   try {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message }),
-    });
-
+    const res = await fetchPromise;
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Request failed (${res.status})`);
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let full = "";
-    assistantBubble.classList.remove("msg--pending");
+    const full = await collectFullText(res);
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    // Keep the typing indicator up for a duration scaled to the reply's
+    // length, even if the network already finished faster than that.
+    const remaining = typingDurationFor(full) - (Date.now() - typingStartedAt);
+    if (remaining > 0) await sleep(remaining);
 
-      const events = buffer.split("\n\n");
-      buffer = events.pop() ?? "";
-      for (const raw of events) {
-        const isDone = raw.startsWith("event: done");
-        const dataLine = raw.split("\n").find((line) => line.startsWith("data:"));
-        if (!dataLine) continue;
-        const json = dataLine.slice("data:".length).trim();
-        if (!json || isDone) continue;
-        full += JSON.parse(json);
-        assistantBubble.textContent = full;
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
+    bubble.classList.remove("msg--pending");
+    if (!full.trim()) {
+      bubble.classList.add("msg--error");
+      bubble.textContent = "Sorry, I didn't get a response. Please try again.";
+    } else {
+      bubble.innerHTML = renderMarkdownLite(full);
     }
-
-    if (!full) {
-      assistantBubble.textContent = "Sorry, I didn't get a response. Please try again.";
-      assistantBubble.classList.add("msg--error");
-    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   } catch (err) {
-    assistantBubble.classList.remove("msg--pending");
-    assistantBubble.classList.add("msg--error");
-    assistantBubble.textContent = `Sorry, something went wrong: ${err.message}`;
+    bubble.classList.remove("msg--pending");
+    bubble.classList.add("msg--error");
+    bubble.textContent = `Sorry, something went wrong: ${err.message}`;
   } finally {
     sendButtonEl.disabled = false;
   }

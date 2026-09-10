@@ -91,11 +91,17 @@ const NOISE_SELECTORS =
   ".badge, .quick-add, .slider-counter, .sold-count, [aria-hidden='true'], " +
   ".product-grid, .card__badge, .rating";
 
+// A "size" variant-picker label (e.g. "5kg, 10kg, 20kg Bundles") that leaks
+// into the page's .rte content next to each embedded bundle product card.
+// It carries no information once the actual per-variant prices are already
+// captured from the product JSON, so drop repeats of it entirely.
+const NOISE_LINE_PATTERNS = [/^(\d+(\.\d+)?(kg|g),?\s*)+bundles?$/i];
+
 function collapseWhitespace(text: string): string {
   return text
     .split("\n")
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
-    .filter(Boolean)
+    .filter((line) => line && !NOISE_LINE_PATTERNS.some((pattern) => pattern.test(line)))
     .join("\n\n");
 }
 
@@ -221,17 +227,22 @@ async function buildProductsSection(productUrls: string[]): Promise<string> {
 // long boilerplate (e.g. a full Terms of Service) is pure wasted cost/latency
 // for content customers almost never ask about verbatim. Cap it and point
 // back to the source URL for the rest, rather than dropping it entirely.
-const MAX_SECTION_CHARS = 4000;
+// Business-relevant pages (About, Business Bundles, pricing) get a much
+// higher cap since that content directly answers real customer questions;
+// legal boilerplate (policies) gets the tight default.
+const MAX_SECTION_CHARS_DEFAULT = 4000;
+const MAX_SECTION_CHARS_PAGE = 9000;
 
-function capLength(text: string, url: string): string {
-  if (text.length <= MAX_SECTION_CHARS) return text;
-  return `${text.slice(0, MAX_SECTION_CHARS)}...\n\n[Truncated for brevity -- full text at ${url}]`;
+function capLength(text: string, url: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}...\n\n[Truncated for brevity -- full text at ${url}]`;
 }
 
 async function buildHtmlPagesSection(
   urls: string[],
   label: string,
   allowMainFallback = true,
+  maxChars = MAX_SECTION_CHARS_DEFAULT,
 ): Promise<string> {
   const blocks: string[] = [];
   for (const url of urls) {
@@ -242,7 +253,7 @@ async function buildHtmlPagesSection(
       console.log(`  [skip] ${label}: ${title || url} -- no descriptive text found`);
       continue;
     }
-    blocks.push(`### ${title || url}\n- URL: ${url}\n\n${capLength(text, url)}`);
+    blocks.push(`### ${title || url}\n- URL: ${url}\n\n${capLength(text, url, maxChars)}`);
     console.log(`  [ok] ${label}: ${title || url}`);
   }
   return blocks.join("\n\n---\n\n");
@@ -285,9 +296,6 @@ async function main() {
     `Found ${productUrls.length} products, ${pageUrls.length} pages, ${collectionUrls.length} collections, ${blogUrls.length} blog articles.`,
   );
 
-  console.log("\nFetching agents.md ...");
-  const agentsMd = await fetchText(`${SITE}/agents.md`);
-
   console.log("\nFetching products...");
   const productsSection = await buildProductsSection(productUrls);
 
@@ -295,7 +303,7 @@ async function main() {
   const collectionsSection = await buildHtmlPagesSection(collectionUrls, "collection", false);
 
   console.log("\nFetching pages (About Us, Business Bundles, Contact, etc.)...");
-  const pagesSection = await buildHtmlPagesSection(pageUrls, "page");
+  const pagesSection = await buildHtmlPagesSection(pageUrls, "page", true, MAX_SECTION_CHARS_PAGE);
 
   console.log("\nFetching policies...");
   const policyUrls = [
@@ -352,10 +360,6 @@ ${productsSection}
 ## Coffee Guides (blog) -- product/brewing knowledge
 
 ${blogSection}
-
-## Agent / Commerce Boundaries (from the store's own agents.md)
-
-${agentsMd ?? "(agents.md could not be fetched -- see fallback guidance in knowledge.ts)"}
 `;
 
   await mkdir(path.dirname(OUTPUT_PATH), { recursive: true });

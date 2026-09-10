@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Ask Pure Grounds Coffee Co.</title>
     <meta
       name="description"
@@ -20,23 +20,30 @@
   <body>
     <header class="site-header">
       <a class="brand" href="https://puregroundscoffee.com" target="_blank" rel="noopener">
-        <img class="brand__logo" src="/assets/logo.png" alt="Pure Grounds Coffee Co." width="36" height="36" />
+        <img class="brand__logo" src="/assets/logo.png" alt="Pure Grounds Coffee Co." width="32" height="32" />
         <span class="brand__name">Pure Grounds Coffee Co.</span>
       </a>
       <a class="site-header__link" href="https://puregroundscoffee.com" target="_blank" rel="noopener">
-        Visit the shop &rarr;
+        Shop <span aria-hidden="true">&rarr;</span>
       </a>
     </header>
 
     <main class="chat">
-      <div class="chat__intro">
-        <h1>Ask us anything about our coffee</h1>
-        <p>
-          Products, pricing, tasting notes, brewing tips, business bundles &mdash; our assistant knows the
-          Pure Grounds catalog and story. For orders, stock, or anything urgent, reach us directly at
-          <a href="mailto:hello@puregroundscoffee.com">hello@puregroundscoffee.com</a>.
-        </p>
+      <div class="chat__hero">
+        <img
+          src="/assets/hero.webp"
+          alt="Coffee drying beds on Pure Grounds Coffee Co.'s farm in the mountains of Davao Del Sur"
+        />
+        <div class="chat__hero-overlay">
+          <h1>Ask us anything about our coffee</h1>
+        </div>
       </div>
+
+      <p class="chat__subtitle">
+        Products, pricing, tasting notes, brewing tips, business bundles &mdash; our assistant knows the
+        Pure Grounds catalog and story. For orders, stock, or anything urgent, reach us directly at
+        <a href="mailto:hello@puregroundscoffee.com">hello@puregroundscoffee.com</a>.
+      </p>
 
       <div id="messages" class="chat__messages" aria-live="polite"></div>
 
@@ -44,7 +51,7 @@
         <textarea
           id="input"
           class="composer__input"
-          placeholder="Ask about a coffee, price, or brewing tip..."
+          placeholder="Ask about our coffee..."
           rows="1"
           maxlength="2000"
           required
@@ -55,8 +62,7 @@
 
     <footer class="site-footer">
       <p>
-        This assistant can make mistakes &mdash; please verify prices, stock, and policies on
-        <a href="https://puregroundscoffee.com" target="_blank" rel="noopener">puregroundscoffee.com</a>.
+        Visit us at <a href="https://puregroundscoffee.com" target="_blank" rel="noopener">puregroundscoffee.com</a>
       </p>
     </footer>
 

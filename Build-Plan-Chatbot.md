@@ -51,7 +51,7 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [x] 10. Configure `wrangler.jsonc` (assets binding, Durable Object binding+migration, vars/secret placeholders for `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`).
 - [x] 11. `wrangler secret put ANTHROPIC_API_KEY`; `wrangler deploy`; attach Workers Custom Domain `chatbot.puregroundscoffee.com`. Live: routes/custom_domain added to `wrangler.jsonc`; deploy auto-disabled `workers_dev` since an explicit route exists (single clean URL, no `*.workers.dev` duplicate).
 - [x] 12. Manually verify Phase 1 end-to-end — **gate before Phase 2**. Verified locally (`wrangler dev`) and in production (`https://chatbot.puregroundscoffee.com`): grounded product/company answers, multi-turn memory, off-topic redirect all work. Found + fixed a real bug: session cookie was unconditionally `Secure`, which silently broke multi-turn memory over local plain-HTTP `wrangler dev` (browsers/HTTP clients correctly refuse `Secure` cookies over non-HTTPS) -- now conditional on request protocol.
-- [ ] 13. Commit Phase 1 work with clear messages (push only when asked).
+- [x] 13. Commit Phase 1 work with clear messages (push only when asked). Committed (`9c9c4f5`); not pushed yet -- push when you're ready.
 
 ### Phase 2 — AI Gateway proxy + feature showcase
 - [ ] 14. Create AI Gateway `pgc-chatbot` in Cloudflare dashboard; create gateway token.
@@ -69,6 +69,43 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [ ] 26. Confirm/log Logpush and Unified Billing/ZDR as optional talking points (dashboard-only, not required to wire up).
 - [ ] 27. Dry-run the manager-facing demo script end-to-end; commit Phase 2 work.
 
+## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
+
+Real user testing after the first deploy surfaced several behavior/UX
+changes. These are now part of the durable behavior contract, not one-off
+tweaks -- keep them in mind if you touch tone, pacing, or the chat UI:
+
+- **Persona reversed from "redirect to a human" to "act as the sales
+  consultant yourself."** The bot never suggests emailing hello@puregroundscoffee.com
+  or "talking to our team." It answers directly and, when a purchase is the
+  next step, links straight to the product/bundle page instead. This also
+  meant dropping the site's `agents.md` (Shop.app/UCP agent instructions,
+  meant for *other* shopping bots) entirely from the generated knowledge doc
+  since it actively conflicted with this stance. See `src/knowledge.ts` and
+  the "Act like a real sales consultant" section of `knowledge/brand-voice.md`.
+- **B2B/business-bundle knowledge is a first-class scenario**, not an edge
+  case. `scripts/build-knowledge.ts` gives "page" content (About, Business
+  Bundles, pricing) a much higher truncation cap (`MAX_SECTION_CHARS_PAGE`,
+  9000 chars) than policies/blog (4000), since the Coffee Business Bundles
+  page was getting cut off mid-description at the old shared 4000 cap.
+- **Replies are short by default** (2-4 sentences), longer only for genuine
+  multi-item comparisons (e.g. bundle sizing). Enforced primarily via the
+  system prompt's "Keep it short" rule, with `ANTHROPIC_MAX_TOKENS` as a
+  loose backstop. That backstop needs headroom: 500 was tried and cut a
+  legitimate 6-bundle breakdown off mid-sentence, which looks worse than a
+  slightly longer reply -- settled on 800.
+- **Chat pacing no longer streams token-by-token.** `public/app.js` now
+  mimics a real chat exchange: a silent "seen" pause (1.2-2.2s), then a
+  "typing..." indicator held for a duration scaled to the reply's length
+  (0.8s base + ~8ms/char, clamped 1.2-4s), then the full reply appears at
+  once, rendered through a small markdown-lite renderer (`**bold**` -> real
+  `<strong>`, `[label](url)` and bare URLs -> real `<a>` links). The backend
+  still streams SSE as before; the frontend just no longer reveals it
+  progressively -- it buffers, then reveals atomically.
+- **Never use em/en dashes** (prompt instruction + a regex safety net in
+  `src/claude.ts`'s `stripLongDashes`), **Filipino replies are Taglish**
+  (mostly English + Filipino connectors, not textbook-formal Filipino).
+
 ## Context gathered
 
 - **Target repo**: `G:\My Drive\Developer Folder\Chatbot Repo\chatbot` — git repo (`origin` = `github.com/davidrecla/chatbot`), currently just `README.md` + `.gitignore`. Greenfield build.
@@ -78,7 +115,7 @@ same flag to any other ad-hoc Node network scripts on this machine.
   - Pages: `About Us`, `Coffee Business Bundles` (B2B/wholesale pricing inquiry)
   - Blog: `Coffee Guides` (`/blogs/pgccoguidetocoffeeexcellence/...`) — best source of brand *voice*: warm, sensory, educational, second-person ("you"), occasional italics for emphasis, no emoji, light editorializing.
   - Policies: privacy/terms/refund.
-  - Store ships an `agents.md` + Shopify UCP/MCP commerce endpoints for AI agents — useful as a content source and as the boundary for "don't transact, redirect to the real site."
+  - Store ships an `agents.md` + Shopify UCP/MCP commerce endpoints, but that's written for *third-party* shopping agents (installing Shop.app, etc.), not our own chatbot. Per user direction (see below), we deliberately do NOT inject it into the system prompt or lean on "redirect to a human/email" -- the bot acts as the sales consultant itself and links directly to product/bundle pages instead.
 - **Brand palette/fonts** extracted from live theme CSS variables (`--color-*`, `--font-*`): Montserrat (headings + body); warm gold/bronze accent `#B68637`, deep coffee brown `#49281A`, cream/oat neutral `#E2DED7`, near-black text `#121212`/`#171717`, white. Double-check exact hex/scheme usage against computed styles during implementation.
 - **Anthropic access**: user has a real Anthropic Console API key (separate from any claude.ai chat plan).
 - **DNS**: `puregroundscoffee.com` is on Cloudflare nameservers under an account the user controls — Workers Custom Domain for `chatbot.puregroundscoffee.com` is viable.

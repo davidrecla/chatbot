@@ -29,10 +29,13 @@ body {
 body {
   display: flex;
   flex-direction: column;
+  /* dvh accounts for mobile browsers' collapsing address bar; vh alone can
+     clip content (e.g. the composer) below the visible viewport. */
   min-height: 100vh;
+  min-height: 100dvh;
   font-family: var(--font-body);
   color: var(--pgc-ink);
-  background: var(--pgc-cream);
+  background: radial-gradient(circle at 15% 0%, #fbf7ee 0%, var(--pgc-cream) 55%);
 }
 
 a {
@@ -48,16 +51,19 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 24px;
+  gap: 10px;
+  padding: 12px 20px;
   background: var(--pgc-white);
   border-bottom: 1px solid var(--pgc-border);
+  flex-wrap: nowrap;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--pgc-brown);
+  min-width: 0;
 }
 
 .brand:hover {
@@ -65,22 +71,27 @@ a:hover {
 }
 
 .brand__logo {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .brand__name {
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1rem;
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .site-header__link {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--pgc-gold-dark);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .chat {
@@ -88,58 +99,117 @@ a:hover {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: 24px 20px 16px;
+  padding: 20px 20px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   min-height: 0;
 }
 
-.chat__intro h1 {
-  font-size: 1.5rem;
-  margin: 0 0 8px;
-  color: var(--pgc-brown);
+.chat__hero {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(73, 40, 26, 0.12);
+  flex-shrink: 0;
 }
 
-.chat__intro p {
+.chat__hero img {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+}
+
+.chat__hero-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  /* Even, fairly dark scrim (not just a bottom gradient) so centered white
+     text stays readable no matter what part of the photo it lands on. */
+  background: linear-gradient(180deg, rgba(23, 15, 8, 0.5) 0%, rgba(23, 15, 8, 0.58) 100%);
+}
+
+.chat__hero-overlay h1 {
+  margin: 0;
+  max-width: 90%;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--pgc-white);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.chat__subtitle {
   margin: 0;
   color: #4b4136;
   line-height: 1.5;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 .chat__messages {
   flex: 1;
-  min-height: 240px;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   overflow-y: auto;
   padding-right: 4px;
 }
 
+.msg-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.msg-row--user {
+  justify-content: flex-end;
+}
+
+.msg-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px var(--pgc-border);
+}
+
 .msg {
-  max-width: 85%;
-  padding: 12px 16px;
+  max-width: 82%;
+  padding: 11px 15px;
   border-radius: var(--radius);
   line-height: 1.5;
   font-size: 0.95rem;
   white-space: pre-wrap;
   word-wrap: break-word;
+  box-shadow: 0 1px 2px rgba(73, 40, 26, 0.05);
 }
 
 .msg--user {
-  align-self: flex-end;
   background: var(--pgc-brown);
   color: var(--pgc-white);
   border-bottom-right-radius: 4px;
 }
 
 .msg--assistant {
-  align-self: flex-start;
   background: var(--pgc-white);
   border: 1px solid var(--pgc-border);
   border-bottom-left-radius: 4px;
+}
+
+.msg--assistant strong {
+  color: var(--pgc-brown);
+  font-weight: 700;
+}
+
+.msg--assistant a {
+  text-decoration: underline;
 }
 
 .msg--assistant.msg--error {
@@ -148,24 +218,39 @@ a:hover {
   color: #7a2727;
 }
 
-.msg--pending::after {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: var(--pgc-gold);
-  animation: pgc-pulse 1s infinite ease-in-out;
+/* "Typing..." indicator shown before the first word of a reply arrives. */
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px 0;
 }
 
-@keyframes pgc-pulse {
+.typing-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pgc-gold);
+  animation: pgc-bounce 1.2s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes pgc-bounce {
   0%,
+  60%,
   100% {
-    opacity: 0.2;
+    opacity: 0.3;
+    transform: translateY(0);
   }
-  50% {
+  30% {
     opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
@@ -177,6 +262,10 @@ a:hover {
   background: var(--pgc-white);
   border: 1px solid var(--pgc-border);
   border-radius: var(--radius);
+  box-shadow: 0 2px 10px rgba(73, 40, 26, 0.06);
+  flex-shrink: 0;
+  /* Keep the composer clear of the home indicator / gesture bar on iOS. */
+  margin-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .composer__input {
@@ -186,8 +275,10 @@ a:hover {
   resize: none;
   font-family: inherit;
   font-size: 0.95rem;
+  line-height: 1.3;
+  min-height: 40px;
   max-height: 160px;
-  padding: 8px;
+  padding: 9px 8px;
   background: transparent;
   color: var(--pgc-ink);
 }
@@ -203,6 +294,7 @@ a:hover {
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s ease;
+  flex-shrink: 0;
 }
 
 .composer__send:hover {
@@ -216,11 +308,47 @@ a:hover {
 
 .site-footer {
   text-align: center;
-  padding: 12px 20px 20px;
-  font-size: 0.8rem;
+  padding: 10px 20px calc(16px + env(safe-area-inset-bottom, 0px));
+  font-size: 0.78rem;
   color: #7a6f5f;
+  flex-shrink: 0;
 }
 
 .site-footer p {
   margin: 0;
+}
+
+@media (max-width: 480px) {
+  .site-header {
+    padding: 10px 14px;
+  }
+
+  .brand__name {
+    font-size: 0.88rem;
+  }
+
+  .brand__logo {
+    width: 26px;
+    height: 26px;
+  }
+
+  .site-header__link {
+    font-size: 0.82rem;
+  }
+
+  .chat {
+    padding: 14px 14px 12px;
+  }
+
+  .chat__hero img {
+    height: 130px;
+  }
+
+  .chat__hero-overlay h1 {
+    font-size: 1.35rem;
+  }
+
+  .msg {
+    max-width: 88%;
+  }
 }

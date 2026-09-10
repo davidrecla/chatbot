@@ -43,7 +43,12 @@
     // that's the only line that needs to change to put the Gateway in the loop.
     "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
     "ANTHROPIC_MODEL": "claude-sonnet-4-5",
-    "ANTHROPIC_MAX_TOKENS": "1024"
+    // Soft backstop for conciseness (primary enforcement is the system
+    // prompt's "Keep it short" rule) -- generous enough not to cut off a
+    // real multi-item bundle comparison, tight enough to stop runaway essays.
+    // (500 was tried and cut a legitimate 6-item bundle breakdown off
+    // mid-sentence -- a truncated reply is worse than a slightly longer one.)
+    "ANTHROPIC_MAX_TOKENS": "800"
   },
 
   // Custom Domain: puregroundscoffee.com's zone is on this same Cloudflare

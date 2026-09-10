@@ -74,6 +74,17 @@ export async function streamClaudeReply(
  * Parses an Anthropic Messages API SSE stream and emits only the text
  * content of `content_block_delta` (`text_delta`) events.
  */
+/**
+ * Safety net on top of the system prompt's "never use em/en dashes"
+ * instruction, since it's a strong LLM habit that doesn't always fully go
+ * away with a prompt alone. "word — word" -> "word, word"; a bare dash used
+ * as a minus/range (e.g. "10-20kg") is left alone since that's a hyphen, not
+ * an em/en dash.
+ */
+function stripLongDashes(text: string): string {
+  return text.replace(/\s*[\u2013\u2014]\s*/g, ", ");
+}
+
 function sseTextDeltaExtractor(): TransformStream<string, string> {
   let buffer = "";
   return new TransformStream<string, string>({
@@ -92,7 +103,7 @@ function sseTextDeltaExtractor(): TransformStream<string, string> {
             delta?: { type?: string; text?: string };
           };
           if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-            controller.enqueue(event.delta.text ?? "");
+            controller.enqueue(stripLongDashes(event.delta.text ?? ""));
           }
         } catch {
           // Ignore malformed/partial SSE frames -- next chunk will complete them.
