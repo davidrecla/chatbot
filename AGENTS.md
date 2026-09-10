@@ -38,14 +38,26 @@ API access). Deployed secrets are set separately with `wrangler secret put`.
 ## Architecture at a glance
 
 - `src/index.ts` -- routing, `/api/chat` (SSE streaming), session cookie.
-- `src/claude.ts` -- Anthropic Messages API client. Reads target URL/headers
-  from `Env` so Phase 2 (AI Gateway) is a config change, not a rewrite.
-- `src/session.ts` -- `ChatSession` Durable Object (RPC-style), per-visitor
-  message history, interim message-count cap (retired once real Gateway rate
-  limiting exists in Phase 2).
+- `src/claude.ts` -- model-agnostic streaming chat client on the AI Gateway's
+  OpenAI-compatible endpoint (`compat/chat/completions`). Despite the
+  filename (kept to minimize churn), it's not Anthropic-only -- it's what
+  every tier in `src/modelRouting.ts` calls through.
+- `src/modelRouting.ts` -- **which model answers a given message.** Quick
+  reference: first message, <60 chars, no bulk/business terms -> Llama 3.3
+  (Workers AI); mentions `kg`/`bulk`/`wholesale`/`cafe`/`business`/`bundle`/`office`
+  or the conversation already has 6+ messages -> Claude Sonnet; otherwise ->
+  Claude Haiku (default). A session's tier only ever escalates, never drops,
+  for the rest of that conversation.
+- `src/session.ts` -- `ChatSession` Durable Object (RPC-style): per-visitor
+  message history + the session's current model tier (escalate-only, see
+  above). Also a generous message-count cap as a storage-growth backstop.
 - `src/knowledge.ts` -- assembles the system prompt from
   `knowledge/brand-voice.md` + `knowledge/site-knowledge.md` (both baked into
   the Worker bundle as text via the `rules` entry in `wrangler.jsonc`).
+- `src/gateway.ts` -- AI Gateway REST helpers: the Resilience Lab demo
+  (`/api/demo/resilience`) and the `/insights` admin panel's data
+  (`/api/insights/summary`, `/api/insights/log`).
 - `scripts/build-knowledge.ts` -- dev-only Node script, regenerates
   `knowledge/site-knowledge.md` from the live site. Never bundled into the Worker.
-- `public/` -- static chat UI, served via the Workers `assets` binding.
+- `public/` -- static chat UI + `/insights` admin panel, served via the
+  Workers `assets` binding.

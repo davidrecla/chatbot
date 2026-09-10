@@ -140,6 +140,16 @@ steps verified working live against production as of checklist item 27.
 
 ## Phase 2.5 — Multi-model tier routing (post-demo enhancement)
 
+**Model selection rule (quick reference):**
+
+| Condition | Model used |
+|---|---|
+| First message of the session, under 60 characters, no bulk/business terms | Llama 3.3 (Workers AI) |
+| Message (or history) mentions `kg`/`bulk`/`wholesale`/`cafe`/`business`/`bundle`/`office`, **or** the conversation already has 6+ messages | Claude Sonnet |
+| Anything else (the default) | Claude Haiku |
+
+Once a session reaches a higher tier it **never drops back down** for the rest of that conversation, even if a later message looks trivial in isolation. Logic lives in `src/modelRouting.ts` (`classifyTier`); the tier itself is stored per-session in the `ChatSession` Durable Object.
+
 Added after the initial Phase 2 pitch, based on a design discussion about
 using Dynamic Routing to split traffic by prompt type. Summary of the
 design decisions (see the actual session for the full reasoning):
@@ -178,11 +188,14 @@ design decisions (see the actual session for the full reasoning):
   `src/claude.ts` (kept its filename despite no longer being Anthropic-only,
   to minimize churn) was rewritten around this; `ANTHROPIC_BASE_URL` and
   `ANTHROPIC_MODEL` were retired (removed from `types.ts`/`wrangler.jsonc`).
-- **UI**: a header bar ("Currently answering with: ...") shows the live
-  model, updated after every reply, plus a small "via <model>" caption
-  under each assistant bubble so tier escalation is visible turn-by-turn
-  during a demo. Both added defensively with `[hidden] { display: none; }`
-  overrides from the start, learning from the /insights modal bug.
+- **UI**: an inline note in the footer ("Visit us at puregroundscoffee.com ·
+  Currently answering with: ...") shows the live model, updated after every
+  reply, plus a small "via <model>" caption under each assistant bubble so
+  tier escalation is visible turn-by-turn during a demo. (Originally a
+  standalone header bar; moved into the footer, inline next to the existing
+  "Visit us at" line, for a subtler/more aesthetic fit.) Added defensively
+  with a `[hidden] { display: none; }` override from the start, learning
+  from the /insights modal bug.
 
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
