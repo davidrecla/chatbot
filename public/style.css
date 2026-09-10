@@ -176,6 +176,12 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Never let this flex item shrink below its content's natural size --
+     without this, some browsers could compute a narrower-than-content
+     width for very short messages, forcing them to wrap character by
+     character (e.g. "Hi" rendering as "H" / "i" on two lines). max-width
+     below still caps it normally for long messages. */
+  flex-shrink: 0;
   min-width: 0;
   max-width: 82%;
 }
