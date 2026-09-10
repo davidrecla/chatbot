@@ -216,9 +216,22 @@ async function sendMessage(message) {
   }
 }
 
+// Some mobile keyboards (notably Android/Chrome) don't reliably fire a
+// `keydown` with key "Enter" for the on-screen return/go/send key -- it
+// often goes through IME composition events our listener below can't
+// catch, so a literal newline can end up inserted into the textarea
+// before the visible "Send" button is tapped. `.trim()` only strips
+// leading/trailing whitespace, not an embedded one (e.g. "H\ni"), which
+// `white-space: pre-wrap` would then render as two lines. Collapse any
+// internal newlines here so a single-line message is always what's shown
+// and sent, regardless of how it got typed.
+function sanitizeMessage(raw) {
+  return raw.trim().replace(/\s*\n+\s*/g, " ");
+}
+
 formEl.addEventListener("submit", (event) => {
   event.preventDefault();
-  const message = inputEl.value.trim();
+  const message = sanitizeMessage(inputEl.value);
   if (!message) return;
 
   appendMessage("user", message);
