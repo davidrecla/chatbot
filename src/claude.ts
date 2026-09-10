@@ -24,17 +24,43 @@ export class ClaudeApiError extends Error {
   }
 }
 
-function anthropicHeaders(env: Env): HeadersInit {
+export interface GatewayRequestOptions {
+  /** Attached to the Gateway's log entry for this request (User Insights). */
+  metadata?: Record<string, string>;
+  /**
+   * A stable key so semantically-identical requests (e.g. the same opening
+   * FAQ from different visitors) hit the Gateway's cache instead of calling
+   * Anthropic again. Only worth setting for requests where a cached answer
+   * is genuinely fine to reuse across different people -- see how
+   * src/index.ts decides when to pass one.
+   */
+  cacheKey?: string;
+  /** Cache TTL in seconds, only meaningful alongside `cacheKey`. */
+  cacheTtlSeconds?: number;
+}
+
+function anthropicHeaders(env: Env, options?: GatewayRequestOptions): HeadersInit {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "anthropic-version": ANTHROPIC_VERSION,
     "x-api-key": env.ANTHROPIC_API_KEY,
   };
-  // Phase 2: once the Worker is pointed at the AI Gateway, CF_AIG_TOKEN is
-  // set and this header authenticates the request to the gateway itself
-  // (separate from the x-api-key above, which authenticates to Anthropic).
-  if (env.CF_AIG_TOKEN) {
-    headers["cf-aig-authorization"] = `Bearer ${env.CF_AIG_TOKEN}`;
+  // Everything below only makes sense (and is only sent) once the Worker is
+  // actually routed through the Gateway, i.e. CF_AIG_TOKEN is set.
+  if (!env.CF_AIG_TOKEN) return headers;
+
+  // Authenticates the request to the gateway itself (separate from the
+  // x-api-key above, which authenticates to Anthropic).
+  headers["cf-aig-authorization"] = `Bearer ${env.CF_AIG_TOKEN}`;
+
+  if (options?.metadata) {
+    headers["cf-aig-metadata"] = JSON.stringify(options.metadata);
+  }
+  if (options?.cacheKey) {
+    headers["cf-aig-cache-key"] = options.cacheKey;
+    if (options.cacheTtlSeconds) {
+      headers["cf-aig-cache-ttl"] = String(options.cacheTtlSeconds);
+    }
   }
   return headers;
 }
@@ -49,10 +75,11 @@ export async function streamClaudeReply(
   env: Env,
   systemPrompt: string,
   messages: ChatMessage[],
+  options?: GatewayRequestOptions,
 ): Promise<ReadableStream<string>> {
   const res = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, {
     method: "POST",
-    headers: anthropicHeaders(env),
+    headers: anthropicHeaders(env, options),
     body: JSON.stringify({
       model: env.ANTHROPIC_MODEL,
       max_tokens: Number(env.ANTHROPIC_MAX_TOKENS) || 1024,

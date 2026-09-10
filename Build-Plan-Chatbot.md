@@ -54,13 +54,13 @@ same flag to any other ad-hoc Node network scripts on this machine.
 - [x] 13. Commit Phase 1 work with clear messages (push only when asked). Committed (`9c9c4f5`); not pushed yet -- push when you're ready.
 
 ### Phase 2 — AI Gateway proxy + feature showcase
-- [ ] 14. Create AI Gateway `pgc-chatbot` in Cloudflare dashboard; create gateway token.
-- [ ] 15. Switch `ANTHROPIC_BASE_URL` to the gateway's Anthropic endpoint + add `cf-aig-authorization` header/secret. Redeploy; reverify chat still works unchanged.
-- [ ] 16. Add `cf-aig-metadata` (session id, surface tag) to requests.
-- [ ] 17. Add stable `cacheKey`/`cacheTtl` for common FAQ-shaped questions; enable gateway caching.
-- [ ] 18. Configure spend limits + rate limiting on the gateway (dashboard); retire the Phase-1 interim caps once confirmed working.
-- [ ] 19. Enable Guardrails (Llama Guard 3) on the gateway.
-- [ ] 20. Enable DLP (predefined Financial/PII profiles), flag mode first.
+- [x] 14. Create AI Gateway `pgc-chatbot` in Cloudflare dashboard; create gateway token. Created via API (account `0feb844d7ff36330cdd00ed24797fe85`). User created the auth token in the dashboard (Settings > Create authentication token); stored as `CF_AIG_TOKEN` secret (prod) / `.dev.vars` (local). Also enabled `authentication: true` on the gateway itself so it requires that token on every request.
+- [x] 15. Switch `ANTHROPIC_BASE_URL` to the gateway's Anthropic endpoint + add `cf-aig-authorization` header/secret. Redeploy; reverify chat still works unchanged. Verified via Gateway logs API that requests are genuinely logged (`provider: anthropic`, real cost tracked).
+- [x] 16. Add `cf-aig-metadata` (session id, surface tag) to requests. Verified in Gateway logs (`metadata: {session_id, surface: "public-chat"}`).
+- [x] 17. Add stable `cacheKey`/`cacheTtl` for common FAQ-shaped questions; enable gateway caching. Implemented as: any *first* message of a session (no prior history) gets a cache key from its normalized text, TTL 1h (`openingQuestionCacheOptions` in `src/index.ts`). Verified a real cache hit: first request `cached:false, cost:$0.064, duration:5.6s`, second (different session, same opening question) `cached:true, cost:$0, duration:26ms`.
+- [x] 18. Configure spend limits + rate limiting on the gateway (dashboard); retire the Phase-1 interim caps once confirmed working. Set via API: gateway-wide rate limit 30 req/60s; spend limits $0.50/day per session (`session_id` metadata, partitioned) + $10/day account-wide ceiling. Relaxed `MAX_MESSAGES` in `src/session.ts` from 40 to 200 (now just a storage-growth backstop, not the primary defense) and softened the cap-reached message to not mention email.
+- [x] 19. Enable Guardrails (Llama Guard 3) on the gateway. Set via API, all 14 categories (P1, S1-S13) to `FLAG` for both prompt and response -- flagging only for now, not blocking, to avoid a false positive disrupting the pitch demo.
+- [x] 20. Enable DLP (predefined Financial/PII profiles), flag mode first. Set via API using profile IDs for "Financial Information" and "Social Security, Insurance, Tax, and Identifier Numbers" (this account actually has full Zero Trust predefined profiles, not just the free-tier two -- more are available if wanted later), `action: "FLAG"`.
 - [ ] 21. Implement `POST /api/feedback` (👍/👎 buttons in UI → `env.AI.gateway("pgc-chatbot").patchLog(...)`).
 - [ ] 22. Configure a Dynamic Route (primary Claude → fallback Claude Haiku → fallback Workers AI) in the dashboard.
 - [ ] 23. Implement `src/gateway.ts` + `POST /api/demo/resilience` (OpenAI-compat endpoint, `model: "dynamic/<route>"`) — isolated demo path, "simulate outage" + "A/B split" controls.

@@ -3,16 +3,19 @@
  * Called directly via Workers RPC (env.CHAT_SESSION.get(id).appendMessage(...))
  * rather than manual fetch() dispatch.
  *
- * MAX_MESSAGES is an interim, Phase-1-only abuse/cost safeguard -- there's no
- * real rate limiting yet since that arrives with AI Gateway in Phase 2
- * (Build-Plan-Chatbot.md checklist item 18), so we cap history length here
- * in the meantime rather than shipping with no ceiling at all.
+ * MAX_MESSAGES was a tight Phase-1-only abuse/cost safeguard (40, ~20 turns)
+ * before real protection existed. Retired per Build-Plan-Chatbot.md checklist
+ * item 18: the AI Gateway now enforces a real per-session spend limit
+ * ($0.50/day, scoped by the session_id metadata in src/claude.ts) and a
+ * gateway-wide rate limit (30 req/min), so this is now just a generous
+ * backstop against unbounded Durable Object storage growth, not the primary
+ * defense.
  */
 
 import { DurableObject } from "cloudflare:workers";
 import type { ChatMessage, Env } from "./types";
 
-const MAX_MESSAGES = 40; // ~20 user/assistant turns
+const MAX_MESSAGES = 200; // ~100 user/assistant turns
 
 export class ChatSession extends DurableObject<Env> {
   async getHistory(): Promise<ChatMessage[]> {
