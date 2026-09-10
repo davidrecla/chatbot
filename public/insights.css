@@ -216,6 +216,10 @@
   text-decoration: underline;
 }
 
+.conversation-modal[hidden] {
+  display: none;
+}
+
 .conversation-modal {
   position: fixed;
   inset: 0;
