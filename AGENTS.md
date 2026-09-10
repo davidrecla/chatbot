@@ -66,9 +66,43 @@ API access). Deployed secrets are set separately with `wrangler secret put`.
   `knowledge/brand-voice.md` + `knowledge/site-knowledge.md` (both baked into
   the Worker bundle as text via the `rules` entry in `wrangler.jsonc`).
 - `src/gateway.ts` -- AI Gateway REST helpers: the Resilience Lab demo
-  (`/api/demo/resilience`) and the `/insights` admin panel's data
-  (`/api/insights/summary`, `/api/insights/log`).
+  (`/api/demo/resilience`, A/B only -- the old "simulate outage" mode/route
+  was retired), and the `/insights` admin panel's data
+  (`/api/insights/summary`, `/api/insights/log` -- the latter powers a
+  per-log conversation transcript viewer that strips the system prompt out).
 - `scripts/build-knowledge.ts` -- dev-only Node script, regenerates
   `knowledge/site-knowledge.md` from the live site. Never bundled into the Worker.
 - `public/` -- static chat UI + `/insights` admin panel, served via the
-  Workers `assets` binding.
+  Workers `assets` binding. Note: the chat UI's 👍/👎 feedback buttons were
+  removed from `app.js` (too noisy per user feedback) -- the backend
+  (`/api/feedback` -> `patchLog`) still works, just has no UI trigger.
+- `Customer-Demo-Guide.html` (repo root) -- standalone, self-contained demo
+  script for showing this project to a customer, organized around AI
+  Gateway capabilities (not chat features). Open directly in a browser.
+
+## Debugging hard-to-reproduce rendering bugs
+
+For a real mobile-only CSS bug this session, screenshot-based guessing
+burned a lot of time before switching to a scripted repro:
+
+```bash
+npm install --no-save playwright-core   # lightweight, no browser download
+```
+
+Then drive the system's already-installed Edge directly (works well on
+this machine, where downloading a fresh Chromium build is slow/unreliable):
+
+```js
+import { chromium } from "playwright-core";
+const browser = await chromium.launch({ channel: "msedge", headless: true });
+const context = await browser.newContext({ viewport: { width: 375, height: 700 }, isMobile: true, hasTouch: true });
+```
+
+Use `page.evaluate(() => el.getBoundingClientRect())` / `getComputedStyle()`
+for exact pixel measurements instead of eyeballing a screenshot -- this is
+what actually found the root cause (a `max-width` on the wrong element)
+after several plausible-looking fixes had zero measurable effect.
+`playwright-core` was installed with `--no-save` (so it's in
+`node_modules/` as of this session but deliberately not in
+`package.json`/`package-lock.json`) -- a fresh `npm install` on another
+machine won't have it; reinstall with the command above if needed again.

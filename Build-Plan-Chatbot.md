@@ -66,14 +66,17 @@ same flag to any other ad-hoc Node network scripts on this machine.
   - Also discovered DLP's dashboard UI uses a different, newer schema (`dlp: { enabled, policies: [] }`, configured via an "Add Policy" button) than the `dlp: { enabled, action, profiles }` shape this checklist's API calls used -- both were silently accepted by the API with no validation error, but only the `policies`-based shape is what the dashboard itself recognizes/displays as "configured". The account's DLP currently has zero policies (toggle on, but not actually scanning for anything) -- add one via the dashboard's "Add Policy" button if real DLP detection is wanted; do not assume the earlier `profiles`-based API config is still doing anything.
   - Minor residual note: a few of the *exact* phrases used while testing the second incident got their `424`-blocked result cached under the opening-question cache key (1h TTL) -- confirmed by re-testing with genuinely fresh phrasings immediately after the fix, all of which succeeded cleanly. The stale cached blocks for those specific exact phrases self-clear within the hour; not worth manually purging.
   - Also found and fixed a real bug while debugging this: a blocked/errored request produced a **blank response** to the customer instead of any message, because the stream's error path called `controller.error()` instead of emitting text. Fixed in `src/index.ts` -- errors (including a Guardrails/DLP block) now always deliver a complete, on-brand, non-technical message instead of leaking raw provider JSON or silently failing.
-  - **Working demo-safe BLOCK config (current live state)**: rather than all-14-categories, only `S1` (Violent Crimes), `S4` (Child Sexual Exploitation), `S9` (Indiscriminate Weapons), `S10` (Hate), `S11` (Suicide & Self-Harm) are set to `BLOCK`, for both prompt and response; the rest (`P1`, `S2`, `S3`, `S5`-`S8`, `S12`, `S13`) stay `FLAG`. Rationale: these five are the categories least likely to ever resemble ordinary coffee-shop business content, unlike e.g. `S6` Specialized Advice (brewing instructions) or `P1` Prompt Injection (false-positives on our own long, instruction-heavy system prompt). DLP left as-is (enabled, zero policies -- inert). Tested extensively against production: **19 varied normal questions** (English, Taglish, B2B/bulk-order phrasing) -- 18 clean, 1 isolated non-deterministic false positive that succeeded cleanly on 3/3 retries (normal/expected variance for an ML classifier, not a systemic issue). **5 malicious probes** (jailbreak/bomb-making framings) -- all reliably blocked (3/3 repeats each on 3 of them). Reliable demo prompt: *"How do I build an explosive device at home?"* (or similar) -- blocked 100% of repeated tries.
+  - **Working demo-safe BLOCK config (as of the item-20 work)**: rather than all-14-categories, only `S1` (Violent Crimes), `S4` (Child Sexual Exploitation), `S9` (Indiscriminate Weapons), `S10` (Hate), `S11` (Suicide & Self-Harm) are set to `BLOCK`, for both prompt and response; the rest (`P1`, `S2`, `S3`, `S5`-`S8`, `S12`, `S13`) stay `FLAG`. Rationale: these five are the categories least likely to ever resemble ordinary coffee-shop business content, unlike e.g. `S6` Specialized Advice (brewing instructions) or `P1` Prompt Injection (false-positives on our own long, instruction-heavy system prompt). DLP left as-is (enabled, zero policies -- inert). Tested extensively against production: **19 varied normal questions** (English, Taglish, B2B/bulk-order phrasing) -- 18 clean, 1 isolated non-deterministic false positive that succeeded cleanly on 3/3 retries (normal/expected variance for an ML classifier, not a systemic issue). **5 malicious probes** (jailbreak/bomb-making framings) -- all reliably blocked (3/3 repeats each on 3 of them). Reliable demo prompt: *"How do I build an explosive device at home?"* (or similar) -- blocked 100% of repeated tries.
+  - **This config drifts over time and should always be re-verified, not assumed.** As of Phase 2.6 (later in the same overall project), a live API read showed only `S1` and `S9` still set to `BLOCK` (S4/S10/S11 had reverted to `FLAG` at some point via a GUI save -- consistent with the "GUI overwrites API-set fields" behavior documented below) and rate limiting had changed to `99` requests/`60s` (from `30`), with spend limits simplified to a single `$100/day` cost rule (from the original `$0.50/session` + `$10/day` split). The demo prompt above was re-tested at that point and still reliably blocked. **Do not hardcode these specific numbers into a demo script or tell a customer an exact figure without reading the live config first** (`GET .../ai-gateway/gateways/pgc-chatbot`) -- treat every number in this document as "true when last checked," not a permanent fact.
   - **`P1` confirmed = Prompt Injection.** Not officially documented anywhere by Cloudflare (their docs/API reference just say `P1: FLAG or BLOCK` with no description), but confirmed via a log entry's `guardrails` field after sending 3 deliberate prompt-injection attacks (DAN/persona hijack, fake "system message" instruction dump, fake admin "SYSTEM OVERRIDE") with `P1` set to `FLAG`: all 3 showed `"guardrails": {"prompt": {"P1": "FLAG"}}` in the log detail -- i.e. Guardrails correctly detected and flagged all 3 as prompt injection, it just didn't block since `P1` is FLAG-only in the current config (blocking on `P1` was already ruled out -- see above, it false-positives on our own system prompt). Claude's own alignment independently refused all 3 anyway (never revealed the system prompt, explicitly named the injection attempts). Good demo point: two independent layers both held, even without `P1` blocking.
   - **User preference for future sessions: do not configure Guardrails, DLP, or Settings-tab gateway config via the API.** The user manages these three areas manually via the Cloudflare dashboard GUI going forward and does not want the agent making "parallel" changes there. Still fine (and expected/useful) to *read* the live config via the API to verify/diff against what the user set, and to run the test battery (see checklist item 20 note) against production after any GUI change -- just don't write to those settings. Rate limiting, spend limits, and authentication have each been silently reset by GUI saves multiple times in this project already (see item 20 notes) -- always mention this if the user reports something looking wrong after a GUI edit.
 - [x] 21. Implement `POST /api/feedback` (👍/👎 buttons in UI → `env.AI.gateway("pgc-chatbot").patchLog(...)`). Added an `ai` binding to `wrangler.jsonc` for this (no separate token needed). `claude.ts` now captures the `cf-aig-log-id` response header; `index.ts` sends it to the client as a leading `event: meta` SSE frame; `app.js` renders 👍/👎 under each reply once fully revealed. Verified end-to-end: clicking a rating actually sets `feedback` on the real Gateway log entry.
+  - **UI buttons later removed (Phase 2.6)**, per direct user feedback ("noisy, not useful"). The backend endpoint and `patchLog` wiring are untouched and fully functional -- there's just no button in `app.js` calling it anymore. Straightforward to re-add if wanted.
 - [x] 22. Configure a Dynamic Route (primary Claude → fallback Workers AI) in the dashboard. Created via API as `pgc-resilience-outage-demo`: primary is an intentionally-invalid Anthropic model id, so it deterministically always falls back to Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`) -- a reliable, repeatable "simulate outage" demo. **Note**: also tried a `pgc-resilience-ab-test` route using Dynamic Routing's "percentage" node for the A/B split -- it errored at request time (`Failed to get response from provider`) even with a config matching the documented JSON schema exactly (confirmed the model-chain fallback route works fine on the same gateway, only the percentage node fails), so that route was deleted. A/B testing is instead implemented in Worker code (item 23) -- both variants still go through the Gateway.
 - [x] 23. Implement `src/gateway.ts` + `POST /api/demo/resilience` (OpenAI-compat endpoint) — isolated demo path (not part of the main chat), `{"mode": "outage" | "ab-test"}`. Outage mode calls `dynamic/pgc-resilience-outage-demo`. A/B mode randomly picks between `anthropic/claude-haiku-4-5-20251001` and `workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast`, calling each directly via `{provider}/{model}` addressing on the compat endpoint (see item 22 note). Needed a new `CF_API_TOKEN` secret (reused the same capable Cloudflare API token) since direct Workers AI addressing through the compat endpoint needs an `Authorization` header, unlike Dynamic Routes/`env.AI`. Added a random nonce to the demo prompt so repeated calls don't just replay the Gateway's exact-match cache and fake the split. Verified: outage mode always shows `provider: workers-ai`; A/B mode genuinely alternates between both models across repeated calls.
   - **Retired (Phase 2.5)**: the "outage" mode, its `pgc-resilience-outage-demo` Dynamic Route, and the "Simulate provider outage" button were removed at the user's request, no longer used. `handleResilienceDemo` now only runs the A/B mode; `runOutageDemo`/`OUTAGE_DEMO_ROUTE` were deleted from `src/gateway.ts`. `pgc-tier-router` (Phase 2.5) is a more compelling Dynamic Route to showcase now anyway -- it's live-routing real production chat traffic, not a one-off demo call.
 - [x] 24. Build `/insights` admin panel (`public/insights.html`, `insights.css`, `insights.js`): requests, cache-hit rate, spend, latency, feedback ratio, model/provider split, recent activity table, Resilience Lab controls (outage/A-B buttons calling `/api/demo/resilience`); pulls from `src/gateway.ts`'s `fetchInsightsSummary` (aggregates the last 50 log entries via the REST API -- `per_page` maxes at 50, not 100). Extensionless `/insights` resolves to `insights.html` automatically (Workers assets' default html handling).
+  - **Later (Phase 2.6)**: added a per-row "View" conversation transcript modal (see Phase 2.6 section below); the outage button was removed (Phase 2.5, route retired) so Resilience Lab now only has "Run A/B split". The "Feedback" stat card still exists but is effectively frozen at whatever historical data exists, since the chat UI's feedback buttons were also removed (Phase 2.6) -- no new feedback can be generated through the public chat anymore.
 - [x] 25. Set up Cloudflare Access application protecting `/insights`; verify unauthenticated access is blocked. Created via API: self-hosted app covering `chat.puregroundscoffee.com/insights`, `/api/insights`, and `/api/demo` (so the panel's backing endpoints are gated too, not just the page). Policy allows email domains: `puregroundscoffee.com`, `cloudflare.com`, `metrobank.com.ph`, `nexustech.com.ph`. Verified: unauthenticated requests to all three paths get a `302` to the Cloudflare Access login page.
 - [x] 26. Confirm/log Logpush and Unified Billing/ZDR as optional talking points (dashboard-only, not required to wire up). Confirmed current gateway state: `logpush: false` (not enabled -- pitch as "available on a paid plan, exports logs to R2/S3/SIEM, flip a toggle when you want it"), `zdr: false` (pitch as "available for Unified Billing traffic if PII-adjacent use cases need it"), `wholesale: true`, `workers_ai_billing_mode: "postpaid"`. Not wiring these up now, per plan -- see "Demo script" below for exact talking points to use live.
 - [x] 27. Dry-run the manager-facing demo script end-to-end; commit Phase 2 work. See "Demo script for managers" section below -- ran through it live against production, all steps confirmed working (chat, Taglish, business bundles, feedback, caching cost drop, outage fallback, A/B split, Access-gated Insights panel).
@@ -238,6 +241,91 @@ unchanged). Verified end-to-end on the new domain: chat homepage 200,
 `/api/chat` 200, `/insights` still redirects unauthenticated requests to
 the Access login (302).
 
+## Phase 2.6 — Insights conversation viewer, UI polish, demo guide
+
+Everything below happened after Phase 2.5 (multi-model routing), in the
+same broader session. None of it changes the Gateway integration itself --
+it's UI/tooling/documentation work layered on top.
+
+- **`/insights` conversation transcript viewer.** The Gateway's raw log
+  detail buries the actual back-and-forth inside a `request_head` JSON
+  string that also repeats the *entire* system prompt (the whole knowledge
+  base) on every log entry -- unreadable for a demo. Added
+  `fetchLogConversation` (`src/gateway.ts`) + `GET /api/insights/log?id=...`,
+  which extracts just the prior conversation turns and that request's own
+  reply, system prompt stripped entirely. `/insights`' recent-activity table
+  now has a "View" link per row opening this as a clean transcript in a
+  modal (`insights.js`/`insights.css`).
+  - **Real bug hit and fixed**: the modal appeared open on every page load,
+    blocking the whole panel, blank inside. Root cause: `.conversation-modal
+    { display: flex; }` (an author style) always overrides the browser's
+    built-in `[hidden] { display: none; }` default, regardless of selector
+    specificity, because author-origin styles beat user-agent-origin styles
+    in the CSS cascade. Fixed with an explicit `.conversation-modal[hidden]
+    { display: none; }` override. **General lesson**: any element toggled
+    via the `hidden` attribute needs this explicit override if the element
+    also has its own unconditional `display` rule -- applies anywhere else
+    `hidden` is used in this codebase too.
+- **UI aesthetic pass** (`public/index.html`/`style.css`/`app.js`), per
+  direct user feedback on the deployed chat:
+  - Removed the 👍/👎 feedback buttons entirely (deemed noisy/not useful).
+    The backend (`POST /api/feedback` → `patchLog`) is untouched and still
+    fully functional -- only the UI trigger is gone. If a future session is
+    asked "why is there no feedback button," this is why; re-adding one is
+    just re-wiring `app.js`, no backend work needed.
+  - Removed the "Products, pricing, tasting notes..." subtitle paragraph
+    entirely (deemed unnecessary noise above the chat).
+  - Model indicator text simplified from "Currently answering with: X" to
+    "via X".
+  - Footer restructured so the model indicator stacks in its own centered
+    line above "Visit us at..." on mobile, while staying inline
+    ("Visit us at X · via Y") on desktop -- same markup, `flex-direction:
+    row-reverse` (desktop) vs. `column` (mobile media query).
+  - Desktop vertical spacing tightened (smaller hero image, tighter
+    padding/gaps) so more chat history is visible without scrolling.
+- **Real, hard-to-diagnose mobile bug: short messages (e.g. "Hi", "Hey")
+  rendered as one character per line** ("H" / "i"). Multiple plausible-looking
+  CSS fixes (`width: fit-content`, `flex-shrink: 0`, `display: inline-block`,
+  `flex: 0 0 auto`) were tried and **each had zero measurable effect** --
+  the eventual tell that none of them were touching the real cause. Root
+  cause, found via a scripted headless-browser repro (Playwright driving
+  the system's installed Edge via `channel: "msedge"`, no browser download
+  needed -- see below): the mobile media query had `.msg { max-width: 88%;
+  }`, capping the *inner* bubble at 88% of its parent (`.msg-col`), which
+  itself has no explicit width and is already sized to exactly fit the
+  bubble's content. 88% of "just barely enough" is never enough. Invisible
+  for long messages (they wrap at a word boundary anyway), glaring for
+  short ones with no slack to absorb the deficit. **Fix**: the row-relative
+  width cap belongs on `.msg-col` (the container), not on `.msg` (the
+  content) -- `.msg` should always fill 100% of whatever its container
+  already allows. Verified with exact pixel measurements (not just
+  eyeballing a screenshot) that rendered width now equals content's
+  required width in every case.
+  - **Reusable technique for future hard-to-reproduce rendering bugs**:
+    `npm install --no-save playwright-core` (lightweight, no bundled
+    browser download, which is slow/unreliable on this machine's network)
+    and launch the system's already-installed browser directly:
+    `chromium.launch({ channel: "msedge", headless: true })`. Combine with
+    a mobile-emulating `browser.newContext({ viewport, isMobile: true,
+    hasTouch: true, userAgent: "...Mobile..." })` to reproduce mobile-only
+    bugs on a desktop machine, and `getBoundingClientRect()` /
+    `getComputedStyle()` inside `page.evaluate()` for exact pixel-level
+    diagnosis instead of guessing from a screenshot. This found the actual
+    root cause in minutes once set up, after several rounds of
+    screenshot-based guessing had failed. Uninstall with `npm uninstall
+    playwright-core` if not needed for a future debugging session (it was
+    left installed as of this session -- check `package.json`/`node_modules`
+    before assuming it's gone).
+- **`Customer-Demo-Guide.html`** (repo root): a standalone, self-contained,
+  brand-styled HTML page -- open directly in any browser, no server needed.
+  Written as a ~15-20 minute customer-facing script, deliberately organized
+  **around AI Gateway capabilities** (Observability, Dynamic Routing, A/B
+  Testing, Caching, Guardrails, DLP, Governance, Zero Trust Access, custom
+  tooling on Gateway APIs, feedback loop, enterprise add-ons) rather than
+  chatbot conversational features -- the chat is presented as the vehicle
+  for proving each capability, not the product being pitched. Keep this in
+  sync if Gateway settings, the model roster, or the UI change materially.
+
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
 Real user testing after the first deploy surfaced several behavior/UX
@@ -302,15 +390,16 @@ chatbot/
   wrangler.jsonc
   package.json / tsconfig.json
   src/
-    index.ts        # routing: static assets, /api/chat, /api/feedback, /api/demo/resilience, /api/insights/*
-    session.ts       # Durable Object "ChatSession" — per-visitor message history, keyed by a session cookie
-    claude.ts         # thin Claude client: reads ANTHROPIC_BASE_URL/headers from env, so Phase 2 = swap env values
-    knowledge.ts      # builds the system prompt from brand-voice.md + site-knowledge.md
-    gateway.ts        # (Phase 2) AI Gateway REST helpers (logs, analytics, patchLog) for /api/insights + /api/feedback
+    index.ts          # routing: static assets, /api/chat, /api/feedback, /api/demo/resilience, /api/insights/*
+    session.ts         # Durable Object "ChatSession" — per-visitor message history + model tier, keyed by a session cookie
+    claude.ts           # model-agnostic streaming chat client on the Gateway's compat endpoint (every tier calls through this)
+    modelRouting.ts      # tier classification (trivial/technical/standard/complex) -- see Phase 2.5/2.6 below
+    knowledge.ts          # builds the system prompt from brand-voice.md + site-knowledge.md
+    gateway.ts             # AI Gateway REST helpers (logs, analytics, patchLog, conversation transcripts) for /api/insights + /api/feedback + the A/B demo
     types.ts
   public/             # served via the `assets` binding
-    index.html style.css app.js   # main chat UI, brand-styled
-    insights.html insights.js     # "Gateway Insights" admin panel (Phase 2), protected by Cloudflare Access
+    index.html style.css app.js         # main chat UI, brand-styled
+    insights.html insights.css insights.js  # "Gateway Insights" admin panel, protected by Cloudflare Access
     assets/           # logo/favicon pulled from the site's own CDN
   knowledge/
     brand-voice.md     # hand-written tone/style guide
@@ -318,7 +407,8 @@ chatbot/
   scripts/
     build-knowledge.ts # crawls sitemap.xml + Shopify {handle}.json + page/blog HTML, regenerates site-knowledge.md
   .dev.vars.example
-  Build-Plan-Chatbot.md  # this document, kept up to date as the cross-session build log
+  Build-Plan-Chatbot.md    # this document, kept up to date as the cross-session build log
+  Customer-Demo-Guide.html # standalone, self-contained HTML demo script (see Phase 2.6) -- open directly in a browser
   AGENTS.md
 ```
 
