@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gateway Insights &mdash; Pure Grounds Coffee Co.</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/png" href="/assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/insights.css" />
+  </head>
+  <body class="insights-body">
+    <header class="site-header">
+      <a class="brand" href="/">
+        <img class="brand__logo" src="/assets/logo.png" alt="Pure Grounds Coffee Co." width="32" height="32" />
+        <span class="brand__name">Gateway Insights</span>
+      </a>
+      <a class="site-header__link" href="/">&larr; Back to chat</a>
+    </header>
+
+    <main class="insights">
+      <div class="insights__toolbar">
+        <p class="insights__subtitle">
+          Live from the <strong>pgc-chatbot</strong> AI Gateway &mdash; last <span id="window-size">100</span> requests.
+        </p>
+        <button id="refresh-btn" type="button" class="insights__refresh">Refresh</button>
+      </div>
+
+      <section id="cards" class="insights__cards" aria-label="Summary metrics">
+        <div class="insights-card insights-card--loading">Loading&hellip;</div>
+      </section>
+
+      <section class="insights__panel">
+        <h2>Model / provider split</h2>
+        <div id="model-breakdown" class="model-breakdown"></div>
+      </section>
+
+      <section class="insights__panel">
+        <h2>Resilience Lab</h2>
+        <p class="insights__panel-desc">
+          Fires a real request through the Gateway so you can see fallback and A/B routing happen live, right here.
+        </p>
+        <div class="resilience-controls">
+          <button id="btn-outage" type="button" class="resilience-btn">Simulate provider outage</button>
+          <button id="btn-abtest" type="button" class="resilience-btn">Run A/B split</button>
+        </div>
+        <div id="resilience-result" class="resilience-result" hidden></div>
+      </section>
+
+      <section class="insights__panel">
+        <h2>Recent activity</h2>
+        <div id="recent-logs" class="recent-logs"></div>
+      </section>
+    </main>
+
+    <script src="/insights.js" type="module"></script>
+  </body>
+</html>

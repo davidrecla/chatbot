@@ -1,5 +1,5 @@
 import { ClaudeApiError, streamClaudeReply, type GatewayRequestOptions } from "./claude";
-import { runAbTestOnce, runOutageDemo } from "./gateway";
+import { fetchInsightsSummary, runAbTestOnce, runOutageDemo } from "./gateway";
 import { buildSystemPrompt } from "./knowledge";
 import { ChatSession } from "./session";
 import type { ChatMessage, ChatRequestBody, Env, FeedbackRequestBody } from "./types";
@@ -48,6 +48,9 @@ export default {
       }
       if (url.pathname === "/api/demo/resilience" && request.method === "POST") {
         return await handleResilienceDemo(request, env);
+      }
+      if (url.pathname === "/api/insights/summary" && request.method === "GET") {
+        return await handleInsightsSummary(env);
       }
       return env.ASSETS.fetch(request);
     } catch (err) {
@@ -132,6 +135,17 @@ async function handleResilienceDemo(request: Request, env: Env): Promise<Respons
   } catch (err) {
     console.error(err);
     return jsonResponse(502, { error: "Demo call failed" });
+  }
+}
+
+/** GET /api/insights/summary -- powers the /insights admin panel. */
+async function handleInsightsSummary(env: Env): Promise<Response> {
+  try {
+    const summary = await fetchInsightsSummary(env);
+    return jsonResponse(200, summary);
+  } catch (err) {
+    console.error(err);
+    return jsonResponse(502, { error: "Could not load insights" });
   }
 }
 

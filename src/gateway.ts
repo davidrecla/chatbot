@@ -104,3 +104,108 @@ export async function runAbTestOnce(env: Env): Promise<DemoCallResult> {
   const variant = AB_VARIANTS[Math.floor(Math.random() * AB_VARIANTS.length)]!;
   return callCompat(env, variant.model, variant.label);
 }
+
+// ---------------------------------------------------------------------------
+// /insights summary (checklist item 24) -- aggregates the most recent log
+// entries via the REST API into the numbers the admin panel displays.
+// Simple recent-window aggregation rather than the full GraphQL Analytics
+// API, which is plenty for a live "here's what's happening" dashboard.
+// ---------------------------------------------------------------------------
+
+interface GatewayLog {
+  id: string;
+  provider: string | null;
+  model: string | null;
+  cost: number | null;
+  cached: boolean | null;
+  success: boolean | null;
+  duration: number | null;
+  feedback: number | null;
+  created_at: string;
+}
+
+export interface InsightsSummary {
+  windowSize: number;
+  totalRequests: number;
+  cacheHitRate: number;
+  totalCost: number;
+  avgDurationMs: number;
+  errorCount: number;
+  feedback: { up: number; down: number; none: number };
+  modelBreakdown: { model: string; count: number }[];
+  recentLogs: {
+    id: string;
+    provider: string | null;
+    model: string | null;
+    cost: number | null;
+    cached: boolean | null;
+    success: boolean | null;
+    feedback: number | null;
+    created_at: string;
+  }[];
+}
+
+const INSIGHTS_WINDOW_SIZE = 50; // API max for per_page
+
+export async function fetchInsightsSummary(env: Env): Promise<InsightsSummary> {
+  const url =
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai-gateway/gateways/${env.CF_AI_GATEWAY_ID}` +
+    `/logs?per_page=${INSIGHTS_WINDOW_SIZE}&order_by=created_at&order_by_direction=desc`;
+
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } });
+  if (!res.ok) {
+    throw new Error(`Gateway logs request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = (await res.json()) as { result?: GatewayLog[] };
+  const logs = data.result ?? [];
+
+  const modelCounts = new Map<string, number>();
+  let cachedCount = 0;
+  let errorCount = 0;
+  let totalCost = 0;
+  let totalDuration = 0;
+  let durationSamples = 0;
+  const feedback = { up: 0, down: 0, none: 0 };
+
+  for (const log of logs) {
+    if (log.cached) cachedCount++;
+    if (log.success === false) errorCount++;
+    if (typeof log.cost === "number") totalCost += log.cost;
+    if (typeof log.duration === "number") {
+      totalDuration += log.duration;
+      durationSamples++;
+    }
+    if (log.feedback === 1) feedback.up++;
+    else if (log.feedback === -1) feedback.down++;
+    else feedback.none++;
+
+    // Some log entries' `model` already includes a provider prefix (e.g.
+    // compat-endpoint calls report "anthropic/claude-haiku-4.5"); others
+    // report a bare model id and need `provider` prepended ourselves.
+    const modelKey = log.model ? (log.model.includes("/") ? log.model : `${log.provider ?? "?"}/${log.model}`) : "(unknown)";
+    modelCounts.set(modelKey, (modelCounts.get(modelKey) ?? 0) + 1);
+  }
+
+  return {
+    windowSize: INSIGHTS_WINDOW_SIZE,
+    totalRequests: logs.length,
+    cacheHitRate: logs.length ? cachedCount / logs.length : 0,
+    totalCost,
+    avgDurationMs: durationSamples ? totalDuration / durationSamples : 0,
+    errorCount,
+    feedback,
+    modelBreakdown: [...modelCounts.entries()]
+      .map(([model, count]) => ({ model, count }))
+      .sort((a, b) => b.count - a.count),
+    recentLogs: logs.slice(0, 15).map((l) => ({
+      id: l.id,
+      provider: l.provider,
+      model: l.model,
+      cost: l.cost,
+      cached: l.cached,
+      success: l.success,
+      feedback: l.feedback,
+      created_at: l.created_at,
+    })),
+  };
+}
