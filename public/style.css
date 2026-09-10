@@ -99,10 +99,10 @@ a:hover {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: 20px 20px 16px;
+  padding: 14px 20px 12px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-height: 0;
 }
 
@@ -117,7 +117,7 @@ a:hover {
 .chat__hero img {
   display: block;
   width: 100%;
-  height: 150px;
+  height: 110px;
   object-fit: cover;
 }
 
@@ -137,18 +137,10 @@ a:hover {
 .chat__hero-overlay h1 {
   margin: 0;
   max-width: 90%;
-  font-size: 1.7rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--pgc-white);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
-}
-
-.chat__subtitle {
-  margin: 0;
-  color: #4b4136;
-  line-height: 1.5;
-  font-size: 0.9rem;
-  flex-shrink: 0;
 }
 
 .chat__messages {
@@ -193,6 +185,12 @@ a:hover {
 }
 
 .msg {
+  /* Explicit fit-content (rather than relying on the nested flex
+     containers' default sizing) so short messages hug their own content
+     instead of occasionally collapsing to a near-zero width and wrapping
+     character-by-character on narrow/mobile viewports. */
+  width: fit-content;
+  max-width: 100%;
   padding: 11px 15px;
   border-radius: var(--radius);
   line-height: 1.5;
@@ -200,37 +198,6 @@ a:hover {
   white-space: pre-wrap;
   word-wrap: break-word;
   box-shadow: 0 1px 2px rgba(73, 40, 26, 0.05);
-}
-
-.msg-feedback {
-  display: flex;
-  gap: 2px;
-  padding-left: 2px;
-}
-
-.msg-feedback__btn {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 0.8rem;
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: 6px;
-  opacity: 0.45;
-  transition: opacity 0.15s ease, background 0.15s ease;
-}
-
-.msg-feedback__btn:hover {
-  opacity: 1;
-  background: var(--pgc-cream-deep);
-}
-
-.msg-feedback__btn--selected {
-  opacity: 1;
-}
-
-.msg-feedback__btn:disabled {
-  cursor: default;
 }
 
 .msg-model-tag {
@@ -357,6 +324,16 @@ a:hover {
 }
 
 .site-footer {
+  display: flex;
+  /* DOM order is [model-indicator, visit-us-at]; row-reverse renders that
+     visually as "Visit us at X · via Y" on desktop, matching the original
+     single-line layout. See the mobile override below for the stacked
+     "via Y" above "Visit us at X" layout. */
+  flex-direction: row-reverse;
+  justify-content: center;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
   text-align: center;
   padding: 10px 20px calc(16px + env(safe-area-inset-bottom, 0px));
   font-size: 0.78rem;
@@ -364,7 +341,7 @@ a:hover {
   flex-shrink: 0;
 }
 
-.site-footer p {
+.site-footer__visit {
   margin: 0;
 }
 
@@ -378,7 +355,7 @@ a:hover {
 
 .model-indicator::before {
   content: "\00b7";
-  margin: 0 6px;
+  margin-right: 6px;
 }
 
 @media (max-width: 480px) {
@@ -413,5 +390,16 @@ a:hover {
 
   .msg {
     max-width: 88%;
+  }
+
+  .site-footer {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .model-indicator::before {
+    content: none;
+    margin-right: 0;
   }
 }

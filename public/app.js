@@ -109,45 +109,10 @@ function appendTypingBubble() {
   return bubble;
 }
 
-/** Adds 👍/👎 controls below a reply, wired to POST /api/feedback (AI Gateway patchLog). */
-function addFeedbackControls(bubble, logId) {
-  const col = bubble.parentElement;
-  if (!col) return;
-
-  const wrap = document.createElement("div");
-  wrap.className = "msg-feedback";
-
-  const makeButton = (label, rating) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "msg-feedback__btn";
-    btn.textContent = label;
-    btn.setAttribute("aria-label", rating === 1 ? "Good response" : "Not helpful");
-    btn.addEventListener("click", async () => {
-      for (const el of wrap.querySelectorAll("button")) el.disabled = true;
-      btn.classList.add("msg-feedback__btn--selected");
-      try {
-        await fetch("/api/feedback", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ logId, rating }),
-        });
-      } catch {
-        // Feedback is a nice-to-have -- silently ignore network failures here.
-      }
-    });
-    return btn;
-  };
-
-  wrap.appendChild(makeButton("\u{1F44D}", 1));
-  wrap.appendChild(makeButton("\u{1F44E}", -1));
-  col.appendChild(wrap);
-}
-
-/** Shows/updates the footer's "currently answering with: <model>" indicator (demo visibility into the model-tier routing). */
+/** Shows/updates the footer's "via <model>" indicator (demo visibility into the model-tier routing). */
 function updateModelIndicator(model) {
   if (!model) return;
-  modelIndicatorEl.textContent = `Currently answering with: ${model}`;
+  modelIndicatorEl.textContent = `via ${model}`;
   modelIndicatorEl.hidden = false;
 }
 
@@ -168,13 +133,12 @@ function autoGrow() {
 }
 inputEl.addEventListener("input", autoGrow);
 
-/** Reads the full SSE stream from `res`, returning the reply text, the Gateway log id, and which model answered. */
+/** Reads the full SSE stream from `res`, returning the reply text and which model answered. */
 async function collectFullText(res) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let sseBuffer = "";
   let full = "";
-  let logId = null;
   let model = null;
 
   while (true) {
@@ -193,15 +157,13 @@ async function collectFullText(res) {
       if (!json) continue;
 
       if (eventName === "meta") {
-        const meta = JSON.parse(json);
-        logId = meta.logId ?? null;
-        model = meta.model ?? null;
+        model = JSON.parse(json).model ?? null;
       } else if (eventName !== "done") {
         full += JSON.parse(json);
       }
     }
   }
-  return { full, logId, model };
+  return { full, model };
 }
 
 async function sendMessage(message) {
@@ -228,7 +190,7 @@ async function sendMessage(message) {
       throw new Error(data.error || `Request failed (${res.status})`);
     }
 
-    const { full, logId, model } = await collectFullText(res);
+    const { full, model } = await collectFullText(res);
 
     // Keep the typing indicator up for a duration scaled to the reply's
     // length, even if the network already finished faster than that.
@@ -241,7 +203,6 @@ async function sendMessage(message) {
       bubble.textContent = "Sorry, I didn't get a response. Please try again.";
     } else {
       bubble.innerHTML = renderMarkdownLite(full);
-      if (logId) addFeedbackControls(bubble, logId);
       addModelTag(bubble, model);
       updateModelIndicator(model);
     }
