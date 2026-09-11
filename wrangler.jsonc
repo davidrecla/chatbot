@@ -26,6 +26,27 @@
     "run_worker_first": true
   },
 
+  // Semantic index over knowledge/site-knowledge.md (RAG retrieval), keyed
+  // by chunk id. Populated by `npm run embed:knowledge` (dev-only, run after
+  // build:knowledge); queried at request time in src/knowledge.ts so the
+  // system prompt only carries the handful of chunks relevant to the
+  // customer's actual message instead of the whole ~68KB file.
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      // Named "-v2": the original "pgc-knowledge" name got stuck permanently
+      // returning zero query matches after being deleted/recreated a couple
+      // of times during development, despite upserts reporting success --
+      // see scripts/embed-knowledge.ts's ensureIndexExists comment. Don't
+      // delete/recreate this index by name once it's live in production.
+      "index_name": "pgc-knowledge-v2",
+      // Vectorize has no local emulation in `wrangler dev` -- without this,
+      // the binding silently no-ops locally and every local request falls
+      // back to the full knowledge base.
+      "remote": true
+    }
+  ],
+
   // Per-visitor chat history, keyed by a session cookie. See src/session.ts.
   "durable_objects": {
     "bindings": [

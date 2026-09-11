@@ -8,6 +8,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "build:knowledge": "cross-env NODE_OPTIONS=--use-system-ca tsx scripts/build-knowledge.ts",
+    "embed:knowledge": "cross-env NODE_OPTIONS=--use-system-ca tsx scripts/embed-knowledge.ts",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types"
   },

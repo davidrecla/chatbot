@@ -187,7 +187,7 @@ async function claudeReplyStream(
     // below -- see src/modelRouting.ts's header comment. `tierConfig.label`
     // is only used for the UI indicator, since we already know which
     // branch our own `tier` classification implies.
-    reply = await streamModelReply(env, DYNAMIC_ROUTE_MODEL, buildSystemPrompt(), history, {
+    reply = await streamModelReply(env, DYNAMIC_ROUTE_MODEL, await buildSystemPrompt(env, history), history, {
       metadata: { session_id: sessionId, surface: "public-chat", tier },
       ...openingQuestionCacheOptions(history),
     });

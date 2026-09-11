@@ -10,9 +10,12 @@ export interface Env {
   ASSETS: Fetcher;
   CHAT_SESSION: DurableObjectNamespace<ChatSession>;
   // Workers AI binding -- used for env.AI.gateway(id).patchLog(...) (feedback,
-  // checklist item 21). Its permissions come from the Worker's own account,
-  // no separate token needed.
+  // checklist item 21), and for embedding the user's message on every chat
+  // turn (RAG retrieval, see src/knowledge.ts). Its permissions come from the
+  // Worker's own account, no separate token needed.
   AI: Ai;
+  // Semantic index over knowledge/site-knowledge.md, see wrangler.jsonc.
+  VECTORIZE: Vectorize;
 
   // --- Non-secret vars (wrangler.jsonc `vars`) ---
   // ANTHROPIC_BASE_URL/ANTHROPIC_MODEL were retired when the chat path moved

@@ -326,6 +326,93 @@ it's UI/tooling/documentation work layered on top.
   for proving each capability, not the product being pitched. Keep this in
   sync if Gateway settings, the model roster, or the UI change materially.
 
+## Phase 2.7 — Latency investigation: knowledge retrieval (RAG) instead of full-KB stuffing
+
+The user reported the chat feeling slow, "especially on the first message of
+a session." Investigated by measuring each layer of the request path
+separately (direct model calls bypassing the Worker entirely, Gateway logs'
+per-call `duration`, same-session vs. fresh-session timing) rather than
+guessing, to isolate whether it was Workers AI, AI Gateway, or our own
+Worker code.
+
+**Findings:**
+- **Not the Worker/Durable Object.** Calling the model directly (bypassing
+  our Worker/DO/Dynamic Route entirely) produced latency within noise of
+  going through the full app. Same-session (warm DO) vs. fresh-session
+  (cold DO) also showed no real difference beyond generation-length noise.
+- **Not really the Gateway or Guardrails, either, in the way expected.**
+  Dynamic Route branching overhead is sub-millisecond. Guardrails' *prompt*
+  scan runs in parallel with the main model call (near-zero added
+  latency, confirmed via Gateway log timestamps starting within
+  milliseconds of each other); its *response* scan, though, must see the
+  complete output before releasing any of it, so it's genuinely sequential
+  -- adds a real but secondary 0.7-2.8s, and as a side effect means partial
+  tokens never reach the client even though the backend streams via SSE
+  (total latency unaffected, but perceived/progressive-reveal latency is
+  fully lost as long as response scanning is on).
+- **The real cause: `site-knowledge.md` (~68KB / ~19,000 tokens) was resent
+  as part of the system prompt on literally every message**, regardless of
+  what was asked. Isolated, controlled comparison (same question, full
+  prompt vs. a trivial one, same models): Claude Haiku 2.9s -> 13.6s, Claude
+  Sonnet -> 11.0s, Llama 4 Scout (Workers AI) 2.4s -> 4.5-5.6s. The size of
+  the prompt dominated total latency, and hit Claude hardest of all (no
+  prompt caching was configured for it). This also explains why *every*
+  message pays this cost equally -- "first message feels slow" is really
+  about first-time/unique questions never matching the opening-question
+  cache (`FAQ_CACHE_TTL_SECONDS` in src/index.ts), which only helps *exact
+  repeats* of a common opener across different visitors.
+
+**Fix implemented: retrieval instead of full-context stuffing (RAG).**
+Fine-tuning was considered and rejected -- it bakes facts into model
+weights, and this store's products/prices/policies change; retrieval keeps
+facts external and live, matching the existing crawl-and-refresh workflow.
+- `scripts/embed-knowledge.ts` (new, dev-only, run via `npm run
+  embed:knowledge` after `build:knowledge`) splits `site-knowledge.md` into
+  ~80 chunks (roughly one per `###` product/page/policy/article, with long
+  ones like the brewing-guide blog articles split further on paragraph
+  boundaries), embeds each with Workers AI (`@cf/baai/bge-base-en-v1.5`,
+  768-dim), and (re)populates a Vectorize index. Stale vector ids from
+  renamed/removed content are diffed and deleted rather than nuking the
+  whole index (see the Vectorize gotcha below for why).
+- `src/knowledge.ts`'s `buildSystemPrompt` is now `async` and takes the
+  conversation history: it embeds the last few messages, queries Vectorize
+  for the top 8 matching chunks, and uses only those (plus
+  `brand-voice.md`, which stays inline in full) as "Site Knowledge" in the
+  prompt -- instead of the entire file. Falls back to the full file if
+  retrieval errors or comes back empty (never worse than the old behavior,
+  just occasionally slower).
+- Added the `VECTORIZE` binding (`src/types.ts`, `wrangler.jsonc` --
+  `"remote": true` is required, Vectorize has no local emulation in
+  `wrangler dev` and silently no-ops without it).
+- **Verified, not assumed**: checked real Gateway log `tokens_in` before/
+  after on production traffic -- dropped from ~18,000-20,000 to
+  ~2,700-5,300 per request. Rechecked answer quality across product,
+  policy, and brewing-guide questions side by side; all still specific and
+  correct (retrieval reliably surfaces the right chunk, e.g. "Eclipse" for
+  a question naming that product by name). Net latency improvement is
+  real but smaller than the isolated numbers above suggest for the
+  Workers AI tiers specifically, since embedding the query + querying
+  Vectorize adds its own sequential step (roughly 1-2s) before the main
+  model call even starts -- it's a bigger win for the Claude tiers (Claude
+  Sonnet's own call duration dropped from ~11s to ~6.9s on a matched
+  request) than for the already-fast Workers AI trivial tier.
+- **Vectorize gotcha (real, costly, worth remembering)**: deleting and
+  immediately recreating an index of the *same name* left it permanently
+  returning zero query matches -- `insert`/`upsert` kept reporting success
+  and `list-vectors` showed the vectors present, but `query` returned
+  `count: 0` no matter how long we waited or how many times we retried.
+  Reproduced on a second scratch index too (worked fine fresh, broke after
+  one delete+recreate cycle), so it reads as a genuine control-plane race
+  on this account, not a fluke. The only reliable fix found was abandoning
+  the name and using a new one ("pgc-knowledge-v2"). **Never
+  delete+recreate a live Vectorize index by name** -- if it ever truly
+  needs to be rebuilt from scratch, pick a new name rather than reusing the
+  old one. Separately, the control plane also has real eventual-consistency
+  lag (tens of seconds) after index creation/mutations, surfaced as
+  transient "index deleted"/"index not found" errors on calls made only
+  seconds after a preceding one succeeded -- `embed-knowledge.ts` retries
+  these with backoff rather than treating them as fatal.
+
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
 Real user testing after the first deploy surfaced several behavior/UX
@@ -394,7 +481,7 @@ chatbot/
     session.ts         # Durable Object "ChatSession" — per-visitor message history + model tier, keyed by a session cookie
     claude.ts           # model-agnostic streaming chat client on the Gateway's compat endpoint (every tier calls through this)
     modelRouting.ts      # tier classification (trivial/technical/standard/complex) -- see Phase 2.5/2.6 below
-    knowledge.ts          # builds the system prompt from brand-voice.md + site-knowledge.md
+    knowledge.ts          # builds the system prompt from brand-voice.md + a *retrieved* subset of site-knowledge.md (see Phase 2.7)
     gateway.ts             # AI Gateway REST helpers (logs, analytics, patchLog, conversation transcripts) for /api/insights + /api/feedback + the A/B demo
     types.ts
   public/             # served via the `assets` binding
@@ -405,7 +492,8 @@ chatbot/
     brand-voice.md     # hand-written tone/style guide
     site-knowledge.md  # generated knowledge doc (products, prices, tasting notes, About, bundles, policies, FAQs)
   scripts/
-    build-knowledge.ts # crawls sitemap.xml + Shopify {handle}.json + page/blog HTML, regenerates site-knowledge.md
+    build-knowledge.ts  # crawls sitemap.xml + Shopify {handle}.json + page/blog HTML, regenerates site-knowledge.md
+    embed-knowledge.ts  # chunks + embeds site-knowledge.md into the Vectorize retrieval index (see Phase 2.7)
   .dev.vars.example
   Build-Plan-Chatbot.md    # this document, kept up to date as the cross-session build log
   Customer-Demo-Guide.html # standalone, self-contained HTML demo script (see Phase 2.6) -- open directly in a browser
