@@ -413,6 +413,42 @@ facts external and live, matching the existing crawl-and-refresh workflow.
   seconds after a preceding one succeeded -- `embed-knowledge.ts` retries
   these with backoff rather than treating them as fatal.
 
+## Phase 2.8 — Brand voice cleanup + retail-first pricing behavior
+
+- **Removed duplicated tone/style content.** `src/knowledge.ts`'s
+  `OPERATING_RULES` used to restate a lot of `knowledge/brand-voice.md`
+  almost verbatim (short replies, no email deferral, B2B bundle behavior,
+  em dash ban, forbidden greetings, Taglish) -- paying token cost twice for
+  the same guidance on every message. `OPERATING_RULES` is now minimal:
+  identity + "Site Knowledge is your source of truth" + "follow Brand
+  Voice for tone/sales approach." Every stylistic/behavioral rule now lives
+  exactly once, in `brand-voice.md`. Also trimmed brand-voice.md's own
+  wordier sections into tighter directives (e.g. "Keep it short") and
+  removed one internal duplicate (the "no filler/recap" rule was stated in
+  both "Sound like a person" and "Don't" -- kept once).
+- **Reversed the business-bundle pricing default.** Previously
+  brand-voice.md explicitly told the bot to *proactively* bring up
+  5kg/10kg/20kg bundle pricing to anyone who mentioned running a shop or
+  buying in volume, "don't wait to be asked." Per direct instruction, this
+  is now the opposite: **default to quoting retail (per-bag) pricing**,
+  and only surface business bundle/bulk pricing once the customer signals
+  it themselves -- naming a bulk quantity (5kg/10kg/20kg), saying
+  "bulk"/"wholesale"/"supplier," or describing themselves as running a
+  cafe/shop/office buying for their business. See the "Default to retail
+  pricing" bullet under "Act like a real sales consultant" in
+  brand-voice.md. This is a pure system-prompt change (no retrieval/code
+  change needed) -- even though the Vectorize retrieval step may pull in a
+  bundle-priced chunk alongside the retail one for a given product (they're
+  semantically similar), the instruction is what actually withholds it
+  until the customer signals volume/business intent, regardless of what
+  ends up in context.
+  - **Verified on production** across 4 scenarios: a plain price question
+    (retail only, no bundle mention), an explicit "10kg" ask (bundle price
+    surfaced), self-identifying as running a cafe (bundle mode, proactively
+    recommends a specific size), and a plain price question followed by a
+    same-session cafe-context follow-up (correctly upgrades mid-conversation
+    without re-explaining retail pricing).
+
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
 Real user testing after the first deploy surfaced several behavior/UX
