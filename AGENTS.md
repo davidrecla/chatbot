@@ -61,6 +61,17 @@ the Workers AI REST API directly and shells out to `wrangler vectorize`.
     messages) without a technical or B2B signal.
   - `complex` -> Claude Sonnet: 12+ messages, or a bulk/B2B signal
     (`kg`, `bulk`, `wholesale`, `business`, `bundle`, `office`, `cafe`).
+  - `guarded` -> Claude Sonnet, via its own `model_sonnet_guarded` branch:
+    **prompt-injection / instruction-extraction attempts**, matched by
+    `INJECTION_PATTERNS`. Highest tier, so it's sticky for the session.
+    This is a real security control, not a demo prop -- before it existed,
+    injection probes made the `trivial` tier (Llama 4 Scout) dump the whole
+    system prompt verbatim in production. **AI Gateway Guardrails' `P1`
+    category cannot do this job** (it appears on ~100% of requests, benign
+    included, so it's useless as attack evidence and unusable as `BLOCK`).
+    Any future change to the tier/model roster must re-run the injection
+    battery -- a model swap is what silently broke this the first time.
+    See Build-Plan-Chatbot.md Phase 2.9.
   Every call goes to `dynamic/pgc-tier-router` (a Dynamic Route on the
   Gateway, a chain of `conditional` nodes keyed on `metadata.tier`) rather
   than resolving straight to a model string here -- the tier is attached
@@ -128,6 +139,13 @@ the Workers AI REST API directly and shells out to `wrangler vectorize`.
 - `Customer-Demo-Guide.html` (repo root) -- standalone, self-contained demo
   script for showing this project to a customer, organized around AI
   Gateway capabilities (not chat features). Open directly in a browser.
+  Restructured in Phase 2.9 into 5 parts with **governance and AI security
+  as the centerpiece**; every prompt in it was verified against production.
+  Two standing rules if you edit it: only include prompts you've actually
+  re-tested, and keep the "Honesty guardrails" framing that separates
+  Gateway-enforced from app-enforced controls (and enabled-today from
+  available-but-not-configured). Note DLP is currently `enabled` with zero
+  policies, i.e. inert -- don't let the guide imply otherwise.
 
 ## Debugging hard-to-reproduce rendering bugs
 

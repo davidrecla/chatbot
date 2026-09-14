@@ -33,9 +33,9 @@
  * consistently, so language is not a routing axis here.
  */
 
-export type Tier = "trivial" | "technical" | "standard" | "complex";
+export type Tier = "trivial" | "technical" | "standard" | "complex" | "guarded";
 
-const TIER_ORDER: Tier[] = ["trivial", "technical", "standard", "complex"];
+const TIER_ORDER: Tier[] = ["trivial", "technical", "standard", "complex", "guarded"];
 
 export interface TierConfig {
   /** Shown in the UI's model indicator -- what src/index.ts's own tier
@@ -64,7 +64,67 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
   technical: { label: "GPT-OSS 120B (Workers AI)" },
   standard: { label: "Claude Haiku" },
   complex: { label: "Claude Sonnet" },
+  // Prompt-injection / instruction-extraction attempts. Same model as the
+  // complex tier, but a deliberately separate tier so the escalation is
+  // visible as its own branch in the Dynamic Route and filterable as
+  // `metadata.tier = guarded` in the Gateway logs.
+  guarded: { label: "Claude Sonnet (guarded)" },
 };
+
+// Prompt-injection and instruction-extraction attempts, which need the
+// most instruction-hierarchy-resistant model available.
+//
+// Why this exists: an injection attempt is almost always the *opening*
+// message of a session, which put it on the trivial tier (Llama 4 Scout).
+// Measured against production before this was added, Scout leaked the
+// entire system prompt verbatim (operating rules + the whole brand voice
+// guide) on 4 of 5 probes. Claude refuses the same probes.
+//
+// This cannot be delegated to AI Gateway Guardrails' P1 category: on this
+// gateway P1 flags ~100% of requests, benign ones included (measured
+// 18/18, e.g. "What time do you open on Saturdays?"), because Guardrails
+// scans the whole prompt -- our own instruction-heavy system prompt
+// included -- not just the user's turn. So P1 has to stay on FLAG and
+// can't be the enforcement point. See Build-Plan-Chatbot.md Phase 2.9.
+//
+// Patterns are deliberately narrow, requiring injection-specific structure
+// rather than single suspicious words, so ordinary messages that merely
+// contain "ignore" ("Ignore the milk, I want it black") don't escalate.
+const INJECTION_PATTERNS: RegExp[] = [
+  // "ignore/disregard/forget all previous instructions"
+  /\b(ignore|disregard|forget|override|set aside|put aside|drop|bypass|discard)\b[^.?!]{0,40}\b(previous|prior|earlier|above|initial|original|all|your)\b[^.?!]{0,40}\b(instruction|rule|prompt|direction|guideline|polic|constraint)/i,
+  // asking for the configuration by name
+  /\b(system|initial|original|hidden|secret|internal)\s+(prompt|instruction|message|configuration)/i,
+  /\b(reveal|disclose|print|paste|output|repeat|quote|dump|show)\b[^.?!]{0,30}\b(your|the)\b[^.?!]{0,25}\b(instruction|prompt|configuration|rules|knowledge base)/i,
+  /\b(your|the)\b[^.?!]{0,25}\b(instruction|prompt|configuration)s?\b[^.?!]{0,30}\b(verbatim|word for word|in full|full text|exactly)/i,
+  // "repeat the words above", "what were you told never to tell customers"
+  /\brepeat\b[^.?!]{0,25}\b(words|text|everything)\b[^.?!]{0,25}\babove\b/i,
+  // Asking about the instructions indirectly rather than for their text.
+  // Worth being broad here: this class is what an unhardened model answers
+  // most readily, and a non-disclosure rule in the system prompt actually
+  // makes it *worse* (it hands the model an explicit list to read back).
+  /\b(what|everything|anything|which)\b[^.?!]{0,30}\byou (were|was|'ve been|have been|are) (told|instructed|configured|programmed|designed|trained|asked|forbidden|not allowed)\b/i,
+  /\byou (were|was|'ve been|have been) (told|instructed|configured|programmed|designed) (to|never|not)\b/i,
+  // Same thing in question-inverted word order ("what WERE YOU told...",
+  // "what ARE YOU not allowed to say"), which the patterns above miss
+  // because they expect "you were told" contiguously.
+  /\b(what|which|everything|anything)\b[^.?!]{0,20}\b(were|was|are|have|has|did)\s+you\s+(told|instructed|configured|programmed|designed|given|asked|forbidden)\b/i,
+  /\b(are|were|is)\s+you\s+(not allowed|never allowed|forbidden|prohibited|unable|banned)\s+to\s+(say|tell|share|reveal|disclose|discuss|mention)\b/i,
+  /\bnever\s+(share|tell|reveal|disclose|say|mention|discuss)\b[^.?!]{0,30}\b(customer|user|anyone|me)\b/i,
+  /\byou\s+(can'?t|cannot|must not|aren'?t allowed to|are not allowed to|'?re not allowed to|are forbidden to|were forbidden to)\b[^.?!]{0,25}\b(say|tell|share|reveal|disclose|discuss|talk about)\b/i,
+  // persona hijack / jailbreak framings
+  /\b(you are now|from now on you are|act as|pretend (you are|to be)|roleplay as)\b[^.?!]{0,40}\b(dan|unlocked|unrestricted|jailbroken|no (content )?(policy|filter|restriction)|without (any )?(rules|restrictions|filters))/i,
+  /\b(dan mode|developer mode|admin mode|god mode|sudo mode|jailbreak)\b/i,
+  // fake system/admin framing smuggled into the user turn
+  /(<{1,2}\/?sys(tem)?>{1,2}|\[\/?system\]|###\s*(end of )?(user|system)|<\|im_(start|end)\|>)/i,
+  /\b(system override|administrator directive|admin override|system message|new directive)\b\s*:/i,
+  // attempts to rewrite business rules by assertion
+  /\b(new|updated)\s+(polic|directive|instruction|rule)\w*\b[^.?!]{0,45}\b(effective immediately|from now on|all orders (are )?free|confirm)/i,
+];
+
+function isInjectionAttempt(message: string): boolean {
+  return INJECTION_PATTERNS.some((pattern) => pattern.test(message));
+}
 
 // Signals a bulk/business-buyer conversation -- escalate straight to the
 // most capable tier, since a real order is potentially on the line. Matches
@@ -97,10 +157,12 @@ const TRIVIAL_MAX_HISTORY = 4; // ~2 user/assistant turns
  * Classifies a single new user message into a tier. Deterministic (same
  * message + same prior history length always yields the same tier) --
  * "unpredictable" here means content-dependent, not random. Checked in
- * priority order: complex signals override everything, then a technical
- * question, then plain conversation depth decides trivial vs. standard.
+ * priority order: an injection attempt outranks everything, then complex
+ * signals, then a technical question, then plain conversation depth
+ * decides trivial vs. standard.
  */
 export function classifyTier(message: string, historyLengthBeforeThisMessage: number): Tier {
+  if (isInjectionAttempt(message)) return "guarded";
   if (isComplex(message, historyLengthBeforeThisMessage)) return "complex";
   if (isTechnical(message)) return "technical";
   if (historyLengthBeforeThisMessage < TRIVIAL_MAX_HISTORY) return "trivial";
