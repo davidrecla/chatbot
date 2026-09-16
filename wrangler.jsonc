@@ -47,7 +47,15 @@
     }
   ],
 
-  // Per-visitor chat history, keyed by a session cookie. See src/session.ts.
+  "d1_databases": [
+    {
+      "binding": "TRANSCRIPTS",
+      "database_name": "pgc-chat-transcripts",
+      "database_id": "7fbb992e-80b6-40ea-9087-115d7350970e"
+    }
+  ],
+
+  // Per-conversation live state, keyed by a tab-scoped UUID. See src/session.ts.
   "durable_objects": {
     "bindings": [
       {
@@ -90,5 +98,9 @@
       "pattern": "chat.puregroundscoffee.com",
       "custom_domain": true
     }
-  ]
+  ],
+
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  }
 }

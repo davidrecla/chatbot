@@ -37,6 +37,13 @@
       </section>
 
       <section class="insights__panel">
+        <h2>Customer sessions</h2>
+        <p class="insights__panel-desc">One row per chat session. Open a session to see only the back-and-forth messages shown to that customer, with message-level security results.</p>
+        <div id="customer-sessions" class="recent-logs"></div>
+        <button id="sessions-load-more" type="button" class="insights__refresh" hidden>Load more</button>
+      </section>
+
+      <section class="insights__panel">
         <h2>Model / provider split</h2>
         <div id="model-breakdown" class="model-breakdown"></div>
       </section>
@@ -53,8 +60,8 @@
       </section>
 
       <section class="insights__panel">
-        <h2>Recent activity</h2>
-        <p class="insights__panel-desc">Click any row's "View" link for a clean transcript (system prompt/knowledge base excluded).</p>
+        <h2>Gateway activity</h2>
+        <p class="insights__panel-desc">Technical AI Gateway requests, including model routing, cost, cache, and provider details. These rows are not customer chat sessions.</p>
         <div id="recent-logs" class="recent-logs"></div>
       </section>
     </main>

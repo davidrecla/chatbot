@@ -14,10 +14,107 @@ const TYPING_BASE_MS = 800;
 const TYPING_PER_CHAR_MS = 8;
 const TYPING_MIN_MS = 1200;
 const TYPING_MAX_MS = 4000;
+const CONVERSATION_ID_KEY = "pgc_conversation_id";
+const CONVERSATION_LAST_ACTIVITY_KEY = "pgc_conversation_last_activity";
+const CONVERSATION_IDLE_TTL_MS = 60 * 60 * 1000;
+const CONVERSATION_CHANNEL_NAME = "pgc_conversation_tabs";
+const TAB_INSTANCE_ID = crypto.randomUUID();
+let currentConversationId = null;
+let inactivityTimer = null;
+let conversationChannel = null;
+
+function clearConversationUi() {
+  messagesEl.replaceChildren();
+  modelIndicatorEl.textContent = "";
+  modelIndicatorEl.hidden = true;
+}
+
+function clearConversationState() {
+  sessionStorage.removeItem(CONVERSATION_ID_KEY);
+  sessionStorage.removeItem(CONVERSATION_LAST_ACTIVITY_KEY);
+  currentConversationId = null;
+  clearConversationUi();
+}
+
+function createConversation(now = Date.now()) {
+  currentConversationId = crypto.randomUUID();
+  sessionStorage.setItem(CONVERSATION_ID_KEY, currentConversationId);
+  sessionStorage.setItem(CONVERSATION_LAST_ACTIVITY_KEY, String(now));
+  scheduleInactivityClear(now);
+  return currentConversationId;
+}
+
+function scheduleInactivityClear(lastActivity) {
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(() => {
+    const storedActivity = Number(sessionStorage.getItem(CONVERSATION_LAST_ACTIVITY_KEY));
+    if (!storedActivity || Date.now() - storedActivity >= CONVERSATION_IDLE_TTL_MS) clearConversationState();
+    else scheduleInactivityClear(storedActivity);
+  }, Math.max(0, lastActivity + CONVERSATION_IDLE_TTL_MS - Date.now()));
+}
+
+function touchConversation() {
+  const now = Date.now();
+  const lastActivity = Number(sessionStorage.getItem(CONVERSATION_LAST_ACTIVITY_KEY));
+  if (!currentConversationId || !lastActivity || now - lastActivity >= CONVERSATION_IDLE_TTL_MS) {
+    clearConversationState();
+    return createConversation(now);
+  }
+  sessionStorage.setItem(CONVERSATION_LAST_ACTIVITY_KEY, String(now));
+  scheduleInactivityClear(now);
+  return currentConversationId;
+}
+
+async function initializeConversation() {
+  const storedId = sessionStorage.getItem(CONVERSATION_ID_KEY);
+  const lastActivity = Number(sessionStorage.getItem(CONVERSATION_LAST_ACTIVITY_KEY));
+  if (storedId && lastActivity && Date.now() - lastActivity < CONVERSATION_IDLE_TTL_MS) {
+    currentConversationId = storedId;
+    scheduleInactivityClear(lastActivity);
+  } else {
+    clearConversationState();
+    createConversation();
+  }
+
+  if (!("BroadcastChannel" in window)) {
+    clearConversationState();
+    return createConversation();
+  }
+
+  let collision = false;
+  conversationChannel = new BroadcastChannel(CONVERSATION_CHANNEL_NAME);
+  conversationChannel.addEventListener("message", ({ data }) => {
+    if (data?.type === "probe" && data.sender !== TAB_INSTANCE_ID && data.conversationId === currentConversationId) {
+      conversationChannel.postMessage({ type: "occupied", target: data.sender, conversationId: currentConversationId });
+    }
+    if (data?.type === "occupied" && data.target === TAB_INSTANCE_ID && data.conversationId === currentConversationId) {
+      collision = true;
+    }
+  });
+  conversationChannel.postMessage({ type: "probe", sender: TAB_INSTANCE_ID, conversationId: currentConversationId });
+  await sleep(200);
+  if (collision) {
+    clearConversationState();
+    createConversation();
+  }
+  return currentConversationId;
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const conversationReady = initializeConversation();
+
+function clearIfInactive() {
+  const lastActivity = Number(sessionStorage.getItem(CONVERSATION_LAST_ACTIVITY_KEY));
+  if (lastActivity && Date.now() - lastActivity >= CONVERSATION_IDLE_TTL_MS) clearConversationState();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") clearIfInactive();
+});
+window.addEventListener("focus", clearIfInactive);
 
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
@@ -166,14 +263,14 @@ async function collectFullText(res) {
   return { full, model };
 }
 
-async function sendMessage(message) {
+async function sendMessage(message, conversationId) {
   sendButtonEl.disabled = true;
 
   // Fire the request immediately so network latency overlaps with the
   // "seen" delay below, instead of adding on top of it.
   const fetchPromise = fetch("/api/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-conversation-id": conversationId },
     body: JSON.stringify({ message }),
   });
 
@@ -229,15 +326,19 @@ function sanitizeMessage(raw) {
   return raw.trim().replace(/\s*\n+\s*/g, " ");
 }
 
-formEl.addEventListener("submit", (event) => {
+formEl.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (sendButtonEl.disabled) return;
   const message = sanitizeMessage(inputEl.value);
   if (!message) return;
 
+  sendButtonEl.disabled = true;
+  await conversationReady;
+  const conversationId = touchConversation();
   appendMessage("user", message);
   inputEl.value = "";
   autoGrow();
-  sendMessage(message);
+  sendMessage(message, conversationId);
 });
 
 inputEl.addEventListener("keydown", (event) => {

@@ -9,6 +9,8 @@
     "deploy": "wrangler deploy",
     "build:knowledge": "cross-env NODE_OPTIONS=--use-system-ca tsx scripts/build-knowledge.ts",
     "embed:knowledge": "cross-env NODE_OPTIONS=--use-system-ca tsx scripts/embed-knowledge.ts",
+    "db:migrate:local": "wrangler d1 migrations apply pgc-chat-transcripts --local",
+    "db:migrate:remote": "wrangler d1 migrations apply pgc-chat-transcripts --remote",
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types"
   },

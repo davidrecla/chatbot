@@ -647,6 +647,23 @@ centerpiece. Notable content decisions:
 - Observability step now mentions the `llama-guard-3-8b` log entries as
   concrete proof that scanning really ran.
 
+## Phase 2.10 — Conversation isolation, safe context, and idle cleanup
+
+User testing exposed that AI Gateway Guardrails scan the complete request payload, not only the newest user turn. A weapons-related prompt retained in the old cookie-backed history therefore caused harmless later messages such as "hi" to receive a 424 block. The conversation architecture was changed accordingly:
+
+- Browser conversations use UUIDs in tab-scoped `sessionStorage`, sent through `x-conversation-id`; the old 30-day `pgc_session` cookie is no longer used.
+- Duplicate tabs detect a cloned conversation UUID through `BroadcastChannel` and rotate the newer tab to a fresh UUID. Browsers without `BroadcastChannel` favor isolation by creating a new conversation on each page load.
+- Each UUID maps to its own `ChatSession` Durable Object. Its sliding alarm is reset by each new user message and deletes all state after one hour of inactivity.
+- The UI maintains the same sliding inactivity deadline; it clears visible messages and the model indicator when the hour expires, then creates a new UUID on the next message.
+- User messages remain tentative until the Gateway/model attempt finishes. Each Durable Object keeps a complete live transcript with explicit `allowed`, `guarded`, `blocked`, or `failed` outcomes, while its separate model-context store contains only accepted exchanges. Application-detected injection attempts and Gateway-blocked/failed turns remain visible to Insights but never contaminate later prompts or summaries.
+- Every customer-visible bubble is also written in sequence to the `pgc-chat-transcripts` D1 database. D1 stores no system prompt, RAG text, rolling summary, route internals, or raw SSE payload. A daily `17 3 * * *` Cron Trigger purges sessions after 30 days without activity; the Durable Object still deletes live state after one inactive hour.
+- Model context contains 10 complete recent user/assistant exchanges plus the current message. Older accepted turns are asynchronously merged into a rolling conversation summary, capped at 500 words and injected as explicitly untrusted factual memory.
+- Summary calls use the existing `pgc-tier-router` trivial branch with `surface: "conversation-summary"`; generation happens outside the Durable Object under `ctx.waitUntil`, avoiding model-latency duration charges on the object.
+- Guardrails prompt/response flags are asynchronously enriched from each request's Gateway log id and attached to the corresponding D1 user or assistant message. DLP match metadata comes from `cf-aig-dlp`/Gateway logs. Flags remain observability-only and never alter chatbot behavior or context.
+- Insights has separate **Customer sessions** and **Gateway activity** sections. Customer sessions are grouped by conversation UUID and open a D1-backed popup containing exactly the visible customer/chatbot back-and-forth, with per-message clean/pending/flagged/blocked labels and readable Guardrails category reasons. Gateway activity remains a technical per-request view.
+
+The conversation-isolation foundation was deployed in version `cd82b6b8-d8bc-4a22-877e-b20f7c64a10a`; transcript/context separation was deployed in `903475b0-926a-4ed6-8599-9f995d92607b`; D1-backed per-session Insights was deployed in `afb5e831-80f9-4841-9570-5eb73fd0d57b`. The D1 database (`7fbb992e-80b6-40ea-9087-115d7350970e`) and migration `0001_chat_transcripts.sql` are created and applied. Verification covers typecheck, JavaScript syntax, Wrangler dry run, guarded-then-benign and blocked-then-benign payload inspection, one-hour live-state behavior, duplicate-tab isolation, message-level Gateway enrichment, customer-only transcript rendering, 30-day cascade cleanup, and summary compaction.
+
 ## Post-launch UX/behavior refinements (v1.1, after initial Phase 1 ship)
 
 Real user testing after the first deploy surfaced several behavior/UX

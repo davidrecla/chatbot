@@ -9,6 +9,7 @@ import type { ChatSession } from "./session";
 export interface Env {
   ASSETS: Fetcher;
   CHAT_SESSION: DurableObjectNamespace<ChatSession>;
+  TRANSCRIPTS: D1Database;
   // Workers AI binding -- used for env.AI.gateway(id).patchLog(...) (feedback,
   // checklist item 21), and for embedding the user's message on every chat
   // turn (RAG retrieval, see src/knowledge.ts). Its permissions come from the

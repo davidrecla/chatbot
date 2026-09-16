@@ -42,6 +42,35 @@ export function compatUrl(env: Env): string {
   return `https://gateway.ai.cloudflare.com/v1/${env.CF_ACCOUNT_ID}/${env.CF_AI_GATEWAY_ID}/compat/chat/completions`;
 }
 
+export interface GatewaySecurityResult {
+  promptGuardrails: Record<string, "FLAG" | "BLOCK">;
+  responseGuardrails: Record<string, "FLAG" | "BLOCK">;
+  dlpAction: "FLAG" | "BLOCK" | null;
+  dlpMatches: string[];
+}
+
+export async function fetchGatewayLogSecurity(env: Env, logId: string): Promise<GatewaySecurityResult | null> {
+  const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai-gateway/gateways/${env.CF_AI_GATEWAY_ID}/logs/${logId}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Gateway log security request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { result?: Record<string, unknown> };
+  const log = data.result ?? {};
+  const guardrails = log.guardrails && typeof log.guardrails === "object" ? (log.guardrails as Record<string, unknown>) : {};
+  const prompt = guardrails.prompt && typeof guardrails.prompt === "object" ? guardrails.prompt : {};
+  const response = guardrails.response && typeof guardrails.response === "object" ? guardrails.response : {};
+  const action = log.dlp_action === "FLAG" || log.dlp_action === "BLOCK" ? log.dlp_action : null;
+  const matches = (Array.isArray(log.dlp_profiles) ? log.dlp_profiles : log.dlp_profiles ? [log.dlp_profiles] : []).map(
+    (match) => (typeof match === "string" ? match : JSON.stringify(match)),
+  );
+  return {
+    promptGuardrails: prompt as Record<string, "FLAG" | "BLOCK">,
+    responseGuardrails: response as Record<string, "FLAG" | "BLOCK">,
+    dlpAction: action,
+    dlpMatches: matches,
+  };
+}
+
 /** Calls the OpenAI-compatible endpoint with an explicit `model` string (either `dynamic/<route>` or `{provider}/{model}`). */
 async function callCompat(env: Env, model: string, label: string): Promise<DemoCallResult> {
   const res = await fetch(compatUrl(env), {
@@ -220,6 +249,8 @@ export interface LogConversation {
   created_at: string;
   success: boolean | null;
   cost: number | null;
+  sessionId: string | null;
+  source: "gateway-log";
   /** Prior turns sent as context for this request (system prompt excluded). */
   messages: LogConversationTurn[];
   /** The reply this specific request produced, if any (null if blocked/errored). */
@@ -238,7 +269,7 @@ export async function fetchLogConversation(env: Env, logId: string): Promise<Log
   let messages: LogConversationTurn[] = [];
   try {
     const reqBody = JSON.parse(String(log.request_head ?? "{}")) as { messages?: LogConversationTurn[] };
-    messages = reqBody.messages ?? [];
+    messages = (reqBody.messages ?? []).filter((message) => message.role !== "system");
   } catch {
     // Truncated/unparseable request_head -- leave empty rather than error out.
   }
@@ -251,11 +282,14 @@ export async function fetchLogConversation(env: Env, logId: string): Promise<Log
     // Blocked/errored requests often have no parseable response_head.
   }
 
+  const metadata = log.metadata && typeof log.metadata === "object" ? (log.metadata as Record<string, unknown>) : {};
   return {
     id: String(log.id ?? logId),
     created_at: String(log.created_at ?? ""),
     success: typeof log.success === "boolean" ? log.success : null,
     cost: typeof log.cost === "number" ? log.cost : null,
+    sessionId: typeof metadata.session_id === "string" ? metadata.session_id : null,
+    source: "gateway-log",
     messages,
     finalReply,
   };

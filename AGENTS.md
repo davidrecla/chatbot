@@ -15,6 +15,8 @@ npm run build:knowledge  # re-crawl puregroundscoffee.com -> knowledge/site-know
 npm run embed:knowledge  # re-chunk + re-embed site-knowledge.md into the Vectorize
                           # index (run this after build:knowledge, any time it changes)
 npm run dev               # wrangler dev (local); needs .dev.vars, see below
+npm run db:migrate:local  # apply pending D1 transcript migrations locally
+npm run db:migrate:remote # apply pending D1 transcript migrations in production
 npm run typecheck         # tsc --noEmit (note: doesn't cover scripts/, see below)
 npm run deploy            # wrangler deploy
 npm run cf-typegen        # regenerate worker-configuration.d.ts from wrangler.jsonc
@@ -45,7 +47,7 @@ the Workers AI REST API directly and shells out to `wrangler vectorize`.
 
 ## Architecture at a glance
 
-- `src/index.ts` -- routing, `/api/chat` (SSE streaming), session cookie.
+- `src/index.ts` -- routing and `/api/chat` SSE streaming. Conversations use a tab-scoped UUID from `sessionStorage` in `public/app.js`, sent as `x-conversation-id`; there is no persistent session cookie. Duplicate tabs resolve cloned IDs through `BroadcastChannel`, with isolation-first behavior when it is unavailable.
 - `src/claude.ts` -- model-agnostic streaming chat client on the AI Gateway's
   OpenAI-compatible endpoint (`compat/chat/completions`). Despite the
   filename (kept to minimize churn), it's not Anthropic-only -- it's what
@@ -78,9 +80,7 @@ the Workers AI REST API directly and shells out to `wrangler vectorize`.
   via `cf-aig-metadata` in src/index.ts, and the Route does the actual
   model selection. This is deliberate: showcases the Gateway's routing
   capability instead of just picking a model in application code.
-- `src/session.ts` -- `ChatSession` Durable Object (RPC-style): per-visitor
-  message history + the session's current model tier (escalate-only, see
-  above). Also a generous message-count cap as a storage-growth backstop.
+- `src/session.ts` -- one RPC-style `ChatSession` Durable Object per conversation UUID, with two deliberately separate stores: a complete one-hour live transcript (also written in order to D1 for 30-day Insights retention) and safe model context containing only accepted exchanges. Transcript rows represent only bubbles visible to the customer and carry message-level guarded/blocked/failed outcomes plus Gateway enrichment metadata. Model calls receive a bounded summary plus 10 complete recent safe exchanges; application-guarded injection turns and Gateway-blocked/failed turns never re-enter model context or summaries. A sliding alarm deletes live state after one hour without a new user message. Summary generation runs asynchronously through the `trivial` branch of `pgc-tier-router` (`surface: conversation-summary`) so model latency does not keep the Durable Object active.
 - `src/knowledge.ts` -- assembles the system prompt from
   `knowledge/brand-voice.md` (baked into the Worker bundle as text via the
   `rules` entry in `wrangler.jsonc`) plus a **retrieved** subset of
@@ -119,11 +119,7 @@ the Workers AI REST API directly and shells out to `wrangler vectorize`.
     has no local emulation in `wrangler dev`, and without it the binding
     silently no-ops locally (every local request would fall back to the
     full knowledge base with no error).
-- `src/gateway.ts` -- AI Gateway REST helpers: the Resilience Lab demo
-  (`/api/demo/resilience`, A/B only -- the old "simulate outage" mode/route
-  was retired), and the `/insights` admin panel's data
-  (`/api/insights/summary`, `/api/insights/log` -- the latter powers a
-  per-log conversation transcript viewer that strips the system prompt out).
+- `src/gateway.ts` -- AI Gateway REST helpers: the Resilience Lab demo, technical Gateway activity for `/insights`, and asynchronous Guardrails/DLP enrichment keyed by Gateway log id. Customer-session transcripts do not come from Gateway request payloads; `src/transcripts.ts` stores and queries only customer-visible bubbles in D1. `/api/insights/conversations` lists sessions and `/api/insights/conversations/:id` returns one 30-day transcript; `/api/insights/log` remains a separate technical-log viewer with system prompts stripped.
 - `scripts/build-knowledge.ts` -- dev-only Node script, regenerates
   `knowledge/site-knowledge.md` from the live site. Never bundled into the Worker.
 - `scripts/embed-knowledge.ts` -- dev-only Node script, (re)builds the

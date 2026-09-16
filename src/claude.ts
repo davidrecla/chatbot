@@ -11,14 +11,24 @@
 import { compatUrl } from "./gateway";
 import type { ChatMessage, Env } from "./types";
 
+export type GatewayBlockSource = "dlp" | "guardrails" | null;
+
 export class ClaudeApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public blockSource: GatewayBlockSource = null,
+    public logId: string | null = null,
+    public dlpHeader: string | null = null,
   ) {
     super(message);
     this.name = "ClaudeApiError";
   }
+}
+
+function blockSourceFor(res: Response): GatewayBlockSource {
+  if (res.status !== 424) return null;
+  return res.headers.has("cf-aig-dlp") ? "dlp" : "guardrails";
 }
 
 export interface GatewayRequestOptions {
@@ -71,6 +81,7 @@ export interface ClaudeReply {
    * the AI binding).
    */
   logId: string | null;
+  dlpHeader: string | null;
 }
 
 /**
@@ -99,13 +110,54 @@ export async function streamModelReply(
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => "");
-    throw new ClaudeApiError(res.status, `Model API error (${res.status}): ${detail.slice(0, 500)}`);
+    throw new ClaudeApiError(
+      res.status,
+      `Model API error (${res.status}): ${detail.slice(0, 500)}`,
+      blockSourceFor(res),
+      res.headers.get("cf-aig-log-id"),
+      res.headers.get("cf-aig-dlp"),
+    );
   }
 
   return {
     stream: res.body.pipeThrough(new TextDecoderStream()).pipeThrough(sseTextDeltaExtractor()),
     logId: res.headers.get("cf-aig-log-id"),
+    dlpHeader: res.headers.get("cf-aig-dlp"),
   };
+}
+
+export async function completeModelReply(
+  env: Env,
+  model: string,
+  systemPrompt: string,
+  messages: ChatMessage[],
+  options?: GatewayRequestOptions,
+  maxTokens = 700,
+): Promise<string> {
+  const res = await fetch(compatUrl(env), {
+    method: "POST",
+    headers: chatHeaders(env, options),
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      messages: [{ role: "system", content: systemPrompt }, ...messages.map((m) => ({ role: m.role, content: m.content }))],
+      stream: false,
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new ClaudeApiError(
+      res.status,
+      `Model API error (${res.status}): ${detail.slice(0, 500)}`,
+      blockSourceFor(res),
+      res.headers.get("cf-aig-log-id"),
+      res.headers.get("cf-aig-dlp"),
+    );
+  }
+
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  return data.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
 /**

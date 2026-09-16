@@ -179,6 +179,10 @@
   margin-bottom: 4px;
 }
 
+.recent-logs {
+  overflow-x: auto;
+}
+
 .recent-logs table {
   width: 100%;
   border-collapse: collapse;
@@ -303,6 +307,39 @@
 
 .transcript-turn--current {
   border: 2px solid var(--pgc-gold);
+}
+
+.transcript-turn--guarded,
+.transcript-turn--blocked,
+.transcript-turn--failed {
+  border: 2px solid var(--pgc-gold);
+}
+
+.transcript-outcome {
+  display: block;
+  width: fit-content;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.22);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.transcript-outcome--clean {
+  background: rgba(56, 142, 60, 0.2);
+}
+
+.transcript-outcome--pending,
+.transcript-outcome--unavailable {
+  background: rgba(122, 111, 95, 0.2);
+}
+
+.transcript-outcome--blocked,
+.transcript-outcome--failed {
+  background: rgba(176, 45, 45, 0.2);
 }
 
 .transcript-meta {
