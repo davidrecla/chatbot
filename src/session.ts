@@ -38,6 +38,7 @@ export interface TranscriptEntry {
   enrichmentStatus: "pending" | "complete" | "unavailable";
   guardrailAction?: "FLAG" | "BLOCK";
   guardrailCategories?: string[];
+  guardrailResults?: { code: string; action: "FLAG" | "BLOCK" }[];
   dlpAction?: "FLAG" | "BLOCK";
   dlpMatches?: string[];
   createdAt: number;
@@ -216,6 +217,7 @@ export class ChatSession extends DurableObject<Env> {
           enrichmentStatus: security.gatewayLogId ? "pending" : "unavailable",
           guardrailAction: "FLAG",
           guardrailCategories: ["P1"],
+          guardrailResults: [{ code: "P1", action: "FLAG" }],
           ...(security.dlpAction ? { dlpAction: security.dlpAction } : {}),
           ...(security.dlpMatches.length ? { dlpMatches: security.dlpMatches } : {}),
           createdAt: now,

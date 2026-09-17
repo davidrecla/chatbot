@@ -231,20 +231,32 @@ function securityBadges(message) {
   const badges = [];
   const warning = "AI Gateway evaluated the complete request context; this classification may include prior context.";
   if (message.outcome === "guarded") badges.push(["guarded", "Application injection defense · Prompt Injection", ""]);
-  if (message.guardrailAction) {
-    const reason = guardrailReason(message.guardrailCategories ?? []);
+  const guardrailResults = message.guardrailResults?.length
+    ? message.guardrailResults
+    : (message.guardrailCategories ?? []).map((code) => ({ code, action: message.guardrailAction }));
+  for (const action of ["BLOCK", "FLAG"]) {
+    const categories = guardrailResults.filter((result) => result.action === action).map((result) => result.code);
+    if (!categories.length) continue;
+    const reason = guardrailReason(categories);
+    const target = message.role === "user" ? "request" : "response";
     badges.push([
-      message.guardrailAction === "BLOCK" ? "blocked" : "flagged",
-      `${message.guardrailAction === "BLOCK" ? "Blocked" : "Flagged"} by Guardrails${reason ? ` · ${reason}` : ""}`,
+      action === "BLOCK" ? "blocked" : "flagged",
+      action === "BLOCK"
+        ? `Blocked by Guardrails · ${reason}`
+        : `Gateway ${target} flagged by Guardrails · ${reason} · Full-context scan`,
       warning,
     ]);
-  } else if (message.outcome === "blocked" && message.enforcement === "guardrails") {
+  }
+  if (!guardrailResults.length && message.outcome === "blocked" && message.enforcement === "guardrails") {
     badges.push(["blocked", "Blocked by Guardrails", warning]);
   }
   if (message.dlpAction) {
+    const target = message.role === "user" ? "request" : "response";
     badges.push([
       message.dlpAction === "BLOCK" ? "blocked" : "flagged",
-      `${message.dlpAction === "BLOCK" ? "Blocked" : "Flagged"} by DLP · ${dlpReason(message.dlpMatches ?? [])}`,
+      message.dlpAction === "BLOCK"
+        ? `Blocked by DLP · ${dlpReason(message.dlpMatches ?? [])}`
+        : `Gateway ${target} flagged by DLP · ${dlpReason(message.dlpMatches ?? [])}`,
       "",
     ]);
   } else if (message.outcome === "blocked" && message.enforcement === "dlp") {

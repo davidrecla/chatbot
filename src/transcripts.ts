@@ -13,6 +13,11 @@ export interface StoredConversation {
   failedCount: number;
 }
 
+export interface GuardrailResult {
+  code: string;
+  action: "FLAG" | "BLOCK";
+}
+
 export interface StoredMessage {
   id: string;
   conversationId: string;
@@ -25,6 +30,7 @@ export interface StoredMessage {
   enrichmentStatus: "pending" | "complete" | "unavailable";
   guardrailAction: "FLAG" | "BLOCK" | null;
   guardrailCategories: string[];
+  guardrailResults: GuardrailResult[];
   dlpAction: "FLAG" | "BLOCK" | null;
   dlpMatches: string[];
   displayedAt: number;
@@ -53,6 +59,7 @@ interface MessageRow {
   enrichment_status: "pending" | "complete" | "unavailable";
   guardrail_action: "FLAG" | "BLOCK" | null;
   guardrail_categories_json: string | null;
+  guardrail_results_json: string | null;
   dlp_action: "FLAG" | "BLOCK" | null;
   dlp_matches_json: string | null;
   displayed_at: number;
@@ -66,6 +73,20 @@ function parseArray(value: string | null): unknown[] {
   } catch {
     return [];
   }
+}
+
+function parseGuardrailResults(value: string | null): GuardrailResult[] {
+  return parseArray(value).filter(
+    (result): result is GuardrailResult =>
+      Boolean(
+        result &&
+          typeof result === "object" &&
+          "code" in result &&
+          typeof result.code === "string" &&
+          "action" in result &&
+          (result.action === "FLAG" || result.action === "BLOCK"),
+      ),
+  );
 }
 
 function mapConversation(row: ConversationRow): StoredConversation {
@@ -94,6 +115,7 @@ function mapMessage(row: MessageRow): StoredMessage {
     enrichmentStatus: row.enrichment_status,
     guardrailAction: row.guardrail_action,
     guardrailCategories: parseArray(row.guardrail_categories_json).filter((value): value is string => typeof value === "string"),
+    guardrailResults: parseGuardrailResults(row.guardrail_results_json),
     dlpAction: row.dlp_action,
     dlpMatches: parseArray(row.dlp_matches_json).filter((value): value is string => typeof value === "string"),
     displayedAt: row.displayed_at,
@@ -138,8 +160,8 @@ export async function persistTranscriptEntries(
             `INSERT OR IGNORE INTO conversation_messages (
               id, conversation_id, sequence, role, content, outcome, enforcement,
               gateway_log_id, enrichment_status, guardrail_action,
-              guardrail_categories_json, dlp_action, dlp_matches_json, displayed_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`,
+              guardrail_categories_json, guardrail_results_json, dlp_action, dlp_matches_json, displayed_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
           )
           .bind(
             entry.id,
@@ -153,6 +175,7 @@ export async function persistTranscriptEntries(
             entry.enrichmentStatus,
             entry.guardrailAction ?? null,
             entry.guardrailCategories?.length ? JSON.stringify(entry.guardrailCategories) : null,
+            entry.guardrailResults?.length ? JSON.stringify(entry.guardrailResults) : null,
             entry.dlpAction ?? null,
             entry.dlpMatches?.length ? JSON.stringify(entry.dlpMatches) : null,
             entry.createdAt,
@@ -181,13 +204,14 @@ export async function enrichTranscriptMessages(
     db
       .prepare(
         `UPDATE conversation_messages SET enrichment_status = 'complete', guardrail_action = ?1,
-         guardrail_categories_json = ?2, dlp_action = COALESCE(dlp_action, ?3),
-         dlp_matches_json = CASE WHEN dlp_matches_json IS NULL THEN ?4 ELSE dlp_matches_json END
-         WHERE conversation_id = ?5 AND gateway_log_id = ?6 AND role = 'user'`,
+         guardrail_categories_json = ?2, guardrail_results_json = ?3, dlp_action = COALESCE(dlp_action, ?4),
+         dlp_matches_json = CASE WHEN dlp_matches_json IS NULL THEN ?5 ELSE dlp_matches_json END
+         WHERE conversation_id = ?6 AND gateway_log_id = ?7 AND role = 'user'`,
       )
       .bind(
         promptAction,
         promptEntries.length ? JSON.stringify(promptEntries.map(([code]) => code)) : null,
+        promptEntries.length ? JSON.stringify(promptEntries.map(([code, action]) => ({ code, action }))) : null,
         dlpAction,
         dlpMatches.length ? JSON.stringify(dlpMatches) : null,
         conversationId,
@@ -196,12 +220,13 @@ export async function enrichTranscriptMessages(
     db
       .prepare(
         `UPDATE conversation_messages SET enrichment_status = 'complete', guardrail_action = ?1,
-         guardrail_categories_json = ?2
-         WHERE conversation_id = ?3 AND gateway_log_id = ?4 AND role = 'assistant'`,
+         guardrail_categories_json = ?2, guardrail_results_json = ?3
+         WHERE conversation_id = ?4 AND gateway_log_id = ?5 AND role = 'assistant'`,
       )
       .bind(
         responseAction,
         responseEntries.length ? JSON.stringify(responseEntries.map(([code]) => code)) : null,
+        responseEntries.length ? JSON.stringify(responseEntries.map(([code, action]) => ({ code, action }))) : null,
         conversationId,
         gatewayLogId,
       ),
