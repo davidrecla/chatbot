@@ -284,7 +284,11 @@ async function sendMessage(message, conversationId) {
     const res = await fetchPromise;
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `Request failed (${res.status})`);
+      const err = new Error(data.error || `Request failed (${res.status})`);
+      // A 403 with an error message is deliberate (e.g. a WAF block) -- show
+      // the message as-is instead of burying it under a generic prefix.
+      err.showAsIs = res.status === 403 && !!data.error;
+      throw err;
     }
 
     const { full, model } = await collectFullText(res);
@@ -307,7 +311,7 @@ async function sendMessage(message, conversationId) {
   } catch (err) {
     bubble.classList.remove("msg--pending");
     bubble.classList.add("msg--error");
-    bubble.textContent = `Sorry, something went wrong: ${err.message}`;
+    bubble.textContent = err.showAsIs ? err.message : `Sorry, something went wrong: ${err.message}`;
   } finally {
     sendButtonEl.disabled = false;
   }
