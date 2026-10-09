@@ -80,6 +80,9 @@ the Workers AI REST API directly and shells out to `wrangler vectorize`.
   via `cf-aig-metadata` in src/index.ts, and the Route does the actual
   model selection. This is deliberate: showcases the Gateway's routing
   capability instead of just picking a model in application code.
+  Since 2026-10-09 the trivial tier's Llama Scout node falls back to Claude
+  Haiku on provider errors (a real Scout 500 outage broke the trivial tier
+  before this; see Build-Plan-Chatbot.md "The actual model selection" note).
 - `src/session.ts` -- one RPC-style `ChatSession` Durable Object per conversation UUID, with two deliberately separate stores: a complete one-hour live transcript (also written in order to D1 for 30-day Insights retention) and safe model context containing only accepted exchanges. Transcript rows represent only bubbles visible to the customer and carry message-level guarded/blocked/failed outcomes plus Gateway enrichment metadata. Model calls receive a bounded summary plus 10 complete recent safe exchanges; application-guarded injection turns and Gateway-blocked/failed turns never re-enter model context or summaries. A sliding alarm deletes live state after one hour without a new user message. Summary generation runs asynchronously through the `trivial` branch of `pgc-tier-router` (`surface: conversation-summary`) so model latency does not keep the Durable Object active.
 - `src/knowledge.ts` -- assembles the system prompt from
   `knowledge/brand-voice.md` (baked into the Worker bundle as text via the
